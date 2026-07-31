@@ -869,6 +869,16 @@ static qboolean Host_CollectX86Libraries( ECommonLibraryType lib_type,
 	if( Platform_LibraryExists( native_path, true ))
 		return 0;
 
+#if XASH_APPLE
+	// oldmac: on Apple, a dylib at the mod's own declared macOS path is a correct
+	// install, not a foreign one. Our mods ship ONE fat dylib per role at the plain
+	// name from liblist.gam (dlls/hl.dylib, cl_dlls/client.dylib) rather than the
+	// arch-suffixed name probed above, so without this every mod launch warned that
+	// its own game code was a "32-bit macOS library".
+	if( !COM_StringEmpty( osx_path ) && FS_FileExists( osx_path, true ))
+		return 0;
+#endif
+
 #if !( XASH_WIN32 && XASH_X86 )
 	if( !COM_StringEmpty( win_path ) && FS_FileExists( win_path, true ))
 	{
