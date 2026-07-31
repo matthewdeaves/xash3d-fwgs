@@ -44,7 +44,10 @@ For more information, please refer to <http://unlicense.org/>
 #define FL_CHAN_SENTENCE_FINISHED BIT( 4 ) // if set, finished playing sentence
 #define FL_CHAN_FINISHED          BIT( 5 ) // if set, finished playing single word
 
+#ifndef XASH_TYPEDEF_sound_t
+#define XASH_TYPEDEF_sound_t
 typedef int sound_t;
+#endif
 
 typedef struct portable_samplepair_s
 {

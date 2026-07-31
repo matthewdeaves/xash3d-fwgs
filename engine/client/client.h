@@ -1147,7 +1147,10 @@ void Mod_ReleaseHullPolygons( void );
 //
 // s_main.c
 //
+#ifndef XASH_TYPEDEF_sound_t
+#define XASH_TYPEDEF_sound_t
 typedef int sound_t;
+#endif
 void S_StartBackgroundTrack( const char *intro, const char *loop, int position, qboolean fullpath );
 void S_StopBackgroundTrack( void );
 void S_StreamSetPause( int pause );
