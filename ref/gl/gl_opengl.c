@@ -1022,8 +1022,28 @@ void GL_InitExtensions( void )
 	glConfig.version_string = (const char *)pglGetString( GL_VERSION );
 	glConfig.extensions_string = (const char *)pglGetString( GL_EXTENSIONS );
 
-	pglGetIntegerv( GL_MAJOR_VERSION, &major );
-	pglGetIntegerv( GL_MINOR_VERSION, &minor );
+	// oldmac: GL_MAJOR_VERSION is an OpenGL 3.0 enum, so a 1.x or 2.x context
+	// answers it with GL_INVALID_ENUM and leaves the flag set. Nothing here
+	// clears it, so the next reader of the error queue picks it up: that is
+	// GL_CheckTexImageError() on the first texture uploaded, which is why every
+	// launch logged one bogus "GL_INVALID_ENUM while uploading *default" on
+	// hardware 20 years apart (GL 1.4 GMA 950, GL 2.0 Radeon 9600, Rosetta 2).
+	// The block below already falls back to the version string when major is 0,
+	// so read the string first and only ask when the enum actually exists.
+	{
+		const char *vstr = glConfig.version_string;
+
+		if( vstr )
+		{
+			while( *vstr && ( *vstr < '0' || *vstr > '9' )) vstr++;
+
+			if( Q_atof( vstr ) >= 3.0f )
+			{
+				pglGetIntegerv( GL_MAJOR_VERSION, &major );
+				pglGetIntegerv( GL_MINOR_VERSION, &minor );
+			}
+		}
+	}
 	if( !major && glConfig.version_string )
 	{
 		const char *str = glConfig.version_string;
