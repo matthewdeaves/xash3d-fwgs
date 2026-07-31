@@ -25,6 +25,12 @@ GNU General Public License for more details.
 #include <dlfcn.h>
 #define XASHLIB OS_LIB_PREFIX "xash." OS_LIB_EXT
 #define FreeLibrary( x ) dlclose( x )
+#if XASH_APPLE
+#include <AvailabilityMacros.h> // MAC_OS_X_VERSION_MAX_ALLOWED for the SDK guard below
+#include <mach-o/dyld.h> // _NSGetExecutablePath: resolve libxash next to
+                         // the executable so a Finder-launched .app (cwd=/)
+                         // still finds it. (oldmac .app fix.)
+#endif
 #elif XASH_WIN32
 #include <shellapi.h> // CommandLineToArgvW
 #define XASHLIB L"xash.dll"
@@ -117,10 +123,34 @@ static void Sys_LoadEngine( void )
 
 	Host_Shutdown = (pfnShutdown)GetProcAddress( hEngine, "Host_Shutdown" );
 #elif XASH_POSIX
-	hEngine = dlopen( XASHLIB, RTLD_NOW );
+	const char *xashlib = XASHLIB;
+#if XASH_APPLE
+	// Resolve libxash next to this executable, cwd-independent.
+	static char xashpath[4096];
+	char execpath[4096];
+	uint32_t execpathlen = sizeof( execpath );
+#if defined( MAC_OS_X_VERSION_MAX_ALLOWED ) && MAC_OS_X_VERSION_MAX_ALLOWED < 1040
+	// The 10.3.9 SDK declares _NSGetExecutablePath(char*, unsigned long*); uint32_t and
+	// unsigned long are the same width on ppc32 but distinct types, so cast to match
+	// the older prototype (10.4+ uses uint32_t* and takes the #else path unchanged).
+	if( _NSGetExecutablePath( execpath, (unsigned long *)&execpathlen ) == 0 )
+#else
+	if( _NSGetExecutablePath( execpath, &execpathlen ) == 0 )
+#endif
+	{
+		char *slash = strrchr( execpath, '/' );
+		if( slash )
+		{
+			*slash = 0;
+			snprintf( xashpath, sizeof( xashpath ), "%s/%s", execpath, XASHLIB );
+			xashlib = xashpath;
+		}
+	}
+#endif
+	hEngine = dlopen( xashlib, RTLD_NOW );
 	if( !hEngine )
 	{
-		Launch_Error( "Unable to load %s: %s", XASHLIB, dlerror( ));
+		Launch_Error( "Unable to load %s: %s", xashlib, dlerror( ));
 		return;
 	}
 
