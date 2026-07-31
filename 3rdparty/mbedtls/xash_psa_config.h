@@ -13,6 +13,19 @@
 #define MBEDTLS_PLATFORM_MS_TIME_ALT
 #endif
 
+/* oldmac-mbedtls-ms-time (task#6): macOS before 10.12 has no clock_gettime();
+   route mbedtls_ms_time() through the engine's Platform_DoubleTime() (see
+   3rdparty/mbedtls/compat.c) so the clock_gettime path in
+   tf-psa-crypto/platform/platform_util.c is compiled out. Version-scoped so a
+   modern-macOS build keeps clock_gettime and is unaffected. */
+#if defined( __APPLE__ )
+#include <AvailabilityMacros.h>
+#if !defined( MAC_OS_X_VERSION_10_12 ) || \
+    ( defined( MAC_OS_X_VERSION_MIN_REQUIRED ) && MAC_OS_X_VERSION_MIN_REQUIRED < 101200 )
+#define MBEDTLS_PLATFORM_MS_TIME_ALT
+#endif
+#endif
+
 #undef MBEDTLS_FS_IO
 #undef MBEDTLS_PSA_ITS_FILE_C
 #undef MBEDTLS_PSA_CRYPTO_STORAGE_C
