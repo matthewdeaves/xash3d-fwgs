@@ -1473,6 +1473,80 @@ static void R_RenderLightmapForSurface( msurface_t *fa )
 
 /*
 ================
+Single-pass multitexture world render
+
+oldmac: single-pass multitexture world render (rev 1).
+
+Collapse the classic two-pass world render (base texture, then a separate
+lightmap geometry pass in R_BlendLightmaps) into one immediate-mode
+multitexture draw: TMU0 = base (GL_REPLACE), TMU1 = lightmap (GL_MODULATE, or a
+COMBINE x2 when gl_overbright is set). This halves world/brush fragment count on
+fillrate-bound GPUs (the ATI Rage 128 is ~81% GPU-blocked per profiling; see
+docs/GL-OPTIMIZATION-CASE-STUDY.md). Active only for opaque world surfaces with
+a static lightmap; dynamic-lightmap surfaces still defer to R_BlendLightmaps.
+================
+*/
+static qboolean r_singlepass_active = false;
+
+// set up the two texture stages for a run of single-pass world surfaces
+static void R_SinglePassBegin( void )
+{
+	// TMU0: base texture replaces the (white) fragment color
+	GL_SelectTexture( XASH_TEXTURE0 );
+	pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE );
+
+	// TMU1: lightmap modulated onto the base (x2 if overbright)
+	GL_SelectTexture( XASH_TEXTURE1 );
+	pglEnable( GL_TEXTURE_2D );
+	if( gl_overbright.value )
+	{
+		pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE_ARB );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_COMBINE_RGB_ARB, GL_MODULATE );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE0_RGB_ARB, GL_PREVIOUS_ARB );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE1_RGB_ARB, GL_TEXTURE );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_COMBINE_ALPHA_ARB, GL_REPLACE );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE0_ALPHA_ARB, GL_PREVIOUS_ARB );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_RGB_SCALE_ARB, 2 );
+	}
+	else
+	{
+		pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+	}
+	GL_SelectTexture( XASH_TEXTURE0 );
+}
+
+// restore default single-texture state after the single-pass world run
+static void R_SinglePassEnd( void )
+{
+	GL_SelectTexture( XASH_TEXTURE1 );
+	pglTexEnvi( GL_TEXTURE_ENV, GL_RGB_SCALE_ARB, 1 );
+	pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+	pglDisable( GL_TEXTURE_2D );
+	GL_SelectTexture( XASH_TEXTURE0 );
+	pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+}
+
+// draw one surface as base (TMU0, already bound) x static lightmap (TMU1)
+static void R_SinglePassBrushPoly( msurface_t *fa )
+{
+	glpoly2_t	*p = fa->polys;
+	float		*v;
+	int		i;
+
+	GL_Bind( XASH_TEXTURE1, tr.lightmapTextures[fa->lightmaptexturenum] );
+
+	pglBegin( GL_POLYGON );
+	for( i = 0, v = p->verts[0]; i < p->numverts; i++, v += VERTEXSIZE )
+	{
+		GL_MultiTexCoord2f( XASH_TEXTURE0, v[3], v[4] );
+		GL_MultiTexCoord2f( XASH_TEXTURE1, v[5], v[6] );
+		pglVertex3fv( v );
+	}
+	pglEnd();
+}
+
+/*
+================
 R_RenderBrushPoly
 ================
 */
@@ -1487,22 +1561,109 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 
 	if( FBitSet( fa->flags, SURF_DRAWTURB ))
 	{
-		// warp texture
+		// warp texture.
+		//
+		// EmitWaterPolys uses pglTexCoord2f, so it sets unit 0's texcoord only:
+		// water emits no TMU1 texcoord at all. If the single-pass lightmap stage
+		// is still armed we would modulate the whole surface by one frozen texel
+		// from whichever world surface happened to be drawn last, which is what
+		// made water snap between two brightnesses as the camera moved (#30).
+		if( r_singlepass_active )
+		{
+			GL_SelectTexture( XASH_TEXTURE1 );
+			pglDisable( GL_TEXTURE_2D );
+			GL_SelectTexture( XASH_TEXTURE0 );
+		}
+
 		EmitWaterPolys( fa, cull_type == CULL_BACKSIDE, R_UploadRipples( t ));
 
-		// add lightmaps if requested
+		// add lightmaps if requested. This is a second pass in its own right and
+		// must not be modulated by the stale stage either, so it stays inside
+		// the disabled window.
 		if( Mod_HaveLightmappedWater( ))
 			R_RenderLightmapForSurface( fa );
 
+		// re-arm for the static single-pass surfaces that follow in this chain
+		if( r_singlepass_active )
+		{
+			GL_SelectTexture( XASH_TEXTURE1 );
+			pglEnable( GL_TEXTURE_2D );
+			GL_SelectTexture( XASH_TEXTURE0 );
+		}
 		return;
 	}
 	else GL_Bind( XASH_TEXTURE0, t->gl_texturenum );
 
 	R_RenderFullbrightForSurface( fa, t );
 	R_RenderDetailsForSurface( fa, t );
+
+	// single-pass world: combine base + lightmap in one multitexture draw for
+	// plain static-lightmapped surfaces, halving world overdraw on fillrate-
+	// bound GPUs. Tiled/conveyor surfaces and the dynamic-lightmap case keep
+	// the classic path. R_CheckLightMap has TexSubImage / cache side effects,
+	// so it is called exactly once per surface here (never together with
+	// R_RenderLightmapForSurface, which would call it a second time).
+	if( r_singlepass_active && fa->polys && !FBitSet( fa->polys->flags, SURF_DRAWTILED|SURF_CONVEYOR ) && R_HasLightmap( ))
+	{
+		if( R_CheckLightMap( fa ))
+		{
+			// dynamic lightmap: draw base ONLY now, then defer the real lightmap
+			// to R_BlendLightmaps via the dynamic chain (as the classic path).
+			// The single-pass TMU1 lightmap stage is still enabled here, so we
+			// MUST disable it for this base draw - otherwise DrawGLPoly (which
+			// sets no TMU1 texcoords) lets a stale lightmap texel modulate the
+			// base, and R_BlendLightmaps then adds the correct lightmap on top,
+			// double-lighting the surface. That is the flickering-welder glitch.
+			GL_SelectTexture( XASH_TEXTURE1 );
+			pglDisable( GL_TEXTURE_2D );
+			GL_SelectTexture( XASH_TEXTURE0 );
+
+			fa->info->lightmapchain = gl_lms.dynamic_surfaces;
+			gl_lms.dynamic_surfaces = fa;
+			DrawGLPoly( fa->polys, 0.0f, 0.0f );
+
+			// re-arm TMU1 for the following static single-pass surfaces (and to
+			// keep decal state identical to the static branch below).
+			GL_SelectTexture( XASH_TEXTURE1 );
+			pglEnable( GL_TEXTURE_2D );
+			GL_SelectTexture( XASH_TEXTURE0 );
+		}
+		else
+		{
+			// static (or flickering-lightstyle) lightmap is current in
+			// tr.lightmapTextures[]. R_CheckLightMap above may have just re-bound
+			// TMU0 to the lightmap texture to TexSubImage an animated lightstyle
+			// (the welder), so rebind the BASE to TMU0 before the combined draw -
+			// otherwise the surface samples lightmap-as-base and flickers.
+			GL_Bind( XASH_TEXTURE0, t->gl_texturenum );
+			R_SinglePassBrushPoly( fa );
+		}
+		R_RenderDecalsForSurface( fa, cull_type );
+		return;
+	}
+
+	// Classic two-pass tail, reached when the single-pass guard above declined:
+	// SURF_DRAWTILED, SURF_CONVEYOR, or no lightmap. Same hazard as the water
+	// case: the classic path emits no TMU1 texcoord, so a still-armed lightmap
+	// stage would modulate by a stale texel, and R_RenderLightmapForSurface
+	// would then add the real lightmap on top of it (#30).
+	if( r_singlepass_active )
+	{
+		GL_SelectTexture( XASH_TEXTURE1 );
+		pglDisable( GL_TEXTURE_2D );
+		GL_SelectTexture( XASH_TEXTURE0 );
+	}
+
 	DrawGLPoly( fa->polys, 0.0f, 0.0f );
 	R_RenderDecalsForSurface( fa, cull_type );
 	R_RenderLightmapForSurface( fa );
+
+	if( r_singlepass_active )
+	{
+		GL_SelectTexture( XASH_TEXTURE1 );
+		pglEnable( GL_TEXTURE_2D );
+		GL_SelectTexture( XASH_TEXTURE0 );
+	}
 }
 
 /*
@@ -1542,6 +1703,12 @@ static void R_DrawTextureChains( void )
 
 	R_DrawVBO( !r_fullbright->value && !!WORLDMODEL->lightdata, true );
 
+	// single-pass world render is opaque-world only, needs 2 TMUs, and is
+	// skipped under fog (the classic fog color path handles that).
+	r_singlepass_active = gl_singlepass.value && !glState.isFogEnabled && glConfig.max_texture_units >= 2;
+	if( r_singlepass_active )
+		R_SinglePassBegin();
+
 	for( int i = 0; i < WORLDMODEL->numtextures; i++ )
 	{
 		texture_t *t = WORLDMODEL->textures[i];
@@ -1567,6 +1734,12 @@ static void R_DrawTextureChains( void )
 		for( ; s != NULL; s = s->texturechain )
 			R_RenderBrushPoly( s, CULL_VISIBLE );
 		t->texturechain = NULL;
+	}
+
+	if( r_singlepass_active )
+	{
+		R_SinglePassEnd();
+		r_singlepass_active = false;
 	}
 }
 
