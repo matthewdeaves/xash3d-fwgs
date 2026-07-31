@@ -167,7 +167,12 @@ typedef struct voice_audio_info_s
 } voice_audio_info_t;
 
 // API from engine to client (client calls these)
-typedef struct sound_api_s
+#ifndef XASH_TYPEDEF_sound_api_t
+#define XASH_TYPEDEF_sound_api_t
+typedef struct sound_api_s sound_api_t;
+#endif
+
+struct sound_api_s
 {
 	qboolean           (*CL_GetEntitySpatialization)( channel_t *ch );
 	sfx_t*             (*S_GetSfxByHandle)( sound_t handle );
@@ -175,10 +180,15 @@ typedef struct sound_api_s
 	void               (*pfnS_RawEntSamples)( int entnum, uint samples, uint rate, word width, word channels, const byte *data, int snd_vol, float attn );
 	void               (*pfnSND_ForceInitMouth)( int entnum );
 	voice_audio_info_t (*pfnVoice_GetAudioInfo)( void );
-} sound_api_t;
+};
 
 // Callbacks from client to engine (engine calls these when custom sound is active)
-typedef struct sound_interface_s
+#ifndef XASH_TYPEDEF_sound_interface_t
+#define XASH_TYPEDEF_sound_interface_t
+typedef struct sound_interface_s sound_interface_t;
+#endif
+
+struct sound_interface_s
 {
 	int version;
 
@@ -191,6 +201,6 @@ typedef struct sound_interface_s
 	void     (*pfnS_UpdateRawChannel)( int raw_idx, rawchan_t *ch );  // ch=NULL -> channel freed
 	void     (*pfnS_Spatialize)( channel_t *ch );
 	void     (*pfnS_FreeSound)( sfx_t *sfx, sound_t handle );
-} sound_interface_t;
+};
 
 #endif // SOUND_API_H

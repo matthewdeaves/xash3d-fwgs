@@ -58,7 +58,10 @@ enum
 	FS_GAMEDIRONLY_SEARCH_FLAGS = FS_GAMEDIR_PATH | FS_CUSTOM_PATH | FS_GAMERODIR_PATH
 };
 
+#ifndef XASH_TYPEDEF_searchpath_t
+#define XASH_TYPEDEF_searchpath_t
 typedef struct searchpath_s searchpath_t;
+#endif
 
 // IsArchiveExtensionSupported flags
 enum

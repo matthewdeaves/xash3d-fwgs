@@ -103,7 +103,10 @@ struct convar_s {
 	char     *desc;
 	char     *def_string;
 };
+#ifndef XASH_TYPEDEF_convar_t
+#define XASH_TYPEDEF_convar_t
 typedef struct convar_s convar_t;
+#endif
 
 #if XASH_64BIT
 #define CVAR_SENTINEL (uintptr_t)0xDEADBEEFDEADBEEF

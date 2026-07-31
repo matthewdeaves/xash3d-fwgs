@@ -316,7 +316,10 @@ typedef struct remap_info_s
 	model_t		*model;		// for catch model changes
 } remap_info_t;
 
+#ifndef XASH_TYPEDEF_convar_t
+#define XASH_TYPEDEF_convar_t
 typedef struct convar_s convar_t;
+#endif
 struct con_nprint_s;
 struct engine_studio_api_s;
 struct r_studio_interface_s;

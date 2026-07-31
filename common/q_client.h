@@ -93,7 +93,12 @@ typedef enum {
 } ptype_t;
 
 // !!! if this is changed, it must be changed in d_ifacea.h too !!!
-typedef struct particle_s
+#ifndef XASH_TYPEDEF_particle_t
+#define XASH_TYPEDEF_particle_t
+typedef struct particle_s particle_t;
+#endif
+
+struct particle_s
 {
 	// driver-usable fields
 	vec3_t  org;
@@ -111,7 +116,7 @@ typedef struct particle_s
 	void (*on_die)( struct particle_s *p );
 	void (*think)( struct particle_s *p, float frametime );
 	unsigned char userdata;
-} particle_t;
+};
 
 STATIC_CHECK_SIZEOF( particle_t, 56, 72 );
 

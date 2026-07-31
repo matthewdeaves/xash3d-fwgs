@@ -78,7 +78,10 @@ typedef struct goldsrc_delta_s
 	float postmultiply;
 } goldsrc_delta_t;
 
+#ifndef XASH_TYPEDEF_delta_t
+#define XASH_TYPEDEF_delta_t
 typedef struct delta_s delta_t;
+#endif
 typedef void (*pfnDeltaEncode)( struct delta_s *pFields, const byte *from, const byte *to );
 
 typedef struct

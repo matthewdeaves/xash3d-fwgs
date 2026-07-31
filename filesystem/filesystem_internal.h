@@ -33,7 +33,10 @@ extern "C"
 {
 #endif
 
+#ifndef XASH_TYPEDEF_searchpath_t
+#define XASH_TYPEDEF_searchpath_t
 typedef struct searchpath_s searchpath_t;
+#endif
 typedef struct dir_s dir_t;
 typedef struct zip_s zip_t;
 typedef struct pack_s pack_t;
@@ -94,7 +97,12 @@ typedef struct stringlist_s
 	char		**strings;
 } stringlist_t;
 
-typedef struct searchpath_s
+#ifndef XASH_TYPEDEF_searchpath_t
+#define XASH_TYPEDEF_searchpath_t
+typedef struct searchpath_s searchpath_t;
+#endif
+
+struct searchpath_s
 {
 	string           filename;
 	searchpathtype_t type;
@@ -118,7 +126,7 @@ typedef struct searchpath_s
 	int     (*pfnFindFile)( struct searchpath_s *search, const char *path, char *fixedname, size_t len );
 	void    (*pfnSearch)( struct searchpath_s *search, stringlist_t *list, const char *pattern, int caseinsensitive );
 	byte   *(*pfnLoadFile)( struct searchpath_s *search, const char *path, int pack_ind, fs_offset_t *filesize, void *( *pfnAlloc )( size_t ), void ( *pfnFree )( void * ));
-} searchpath_t;
+};
 
 typedef searchpath_t *(*FS_ADDARCHIVE_FULLPATH)( const char *path, int flags );
 

@@ -104,7 +104,10 @@ typedef struct tempent_s
 	// baseline.angles		- angle velocity
 } TEMPENTITY;
 
+#ifndef XASH_TYPEDEF_particle_t
+#define XASH_TYPEDEF_particle_t
 typedef struct particle_s particle_t;
+#endif
 typedef struct efx_api_s efx_api_t;
 struct dlight_s;
 

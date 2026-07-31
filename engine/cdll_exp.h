@@ -26,8 +26,14 @@ struct r_studio_interface_s;
 struct sound_api_s;
 struct sound_interface_s;
 
+#ifndef XASH_TYPEDEF_sound_api_t
+#define XASH_TYPEDEF_sound_api_t
 typedef struct sound_api_s sound_api_t;
+#endif
+#ifndef XASH_TYPEDEF_sound_interface_t
+#define XASH_TYPEDEF_sound_interface_t
 typedef struct sound_interface_s sound_interface_t;
+#endif
 
 // NOTE: ordering is important!
 typedef struct cldll_func_s

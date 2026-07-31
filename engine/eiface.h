@@ -97,7 +97,10 @@ typedef struct
 
 typedef unsigned int	CRC32_t;
 
+#ifndef XASH_TYPEDEF_delta_t
+#define XASH_TYPEDEF_delta_t
 typedef struct delta_s delta_t;
+#endif
 struct entity_state_s;
 
 // Engine hands this to DLLs for functionality callbacks

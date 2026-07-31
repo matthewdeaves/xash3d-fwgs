@@ -26,7 +26,10 @@ GNU General Public License for more details.
 #include "cvardef.h"
 #include "pmove.h"
 
+#ifndef XASH_TYPEDEF_mip_t
+#define XASH_TYPEDEF_mip_t
 typedef struct mip_s mip_t;
+#endif
 
 typedef int fixed8_t;
 typedef int fixed16_t;

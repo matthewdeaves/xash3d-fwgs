@@ -76,13 +76,18 @@ typedef struct lmp_s
 
 ========================================================================
 */
-typedef struct mip_s
+#ifndef XASH_TYPEDEF_mip_t
+#define XASH_TYPEDEF_mip_t
+typedef struct mip_s mip_t;
+#endif
+
+struct mip_s
 {
 	char		name[16];
 	unsigned int	width;
 	unsigned int	height;
 	unsigned int	offsets[4];	// four mip maps stored
-} mip_t;
+};
 
 /*
 ========================================================================
