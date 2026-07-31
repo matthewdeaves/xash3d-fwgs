@@ -37,7 +37,10 @@ extern "C"
 #define XASH_TYPEDEF_searchpath_t
 typedef struct searchpath_s searchpath_t;
 #endif
+#ifndef XASH_TYPEDEF_dir_t
+#define XASH_TYPEDEF_dir_t
 typedef struct dir_s dir_t;
+#endif
 typedef struct zip_s zip_t;
 typedef struct pack_s pack_t;
 typedef struct wfile_s wfile_t;
