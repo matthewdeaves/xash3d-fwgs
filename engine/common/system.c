@@ -32,6 +32,7 @@ GNU General Public License for more details.
 #if XASH_POSIX
 #include <unistd.h>
 #include <signal.h>
+#include <fcntl.h>
 
 #if !XASH_ANDROID
 #include <pwd.h>
@@ -550,6 +551,69 @@ but since engine will be unloaded during this call
 it explicitly doesn't use internal allocation or string copy utils
 ==================
 */
+/*
+=================
+Sys_RestartExec
+
+oldmac: Darwin refuses execve() from a multi-threaded process -- it returns
+ENOTSUP (errno 45) instead of replacing the image. By the time a game change
+reaches here the engine has shut down, but SDL's helper threads are still
+alive, so on Mac OS X a plain execv() always fails and the old process is left
+running with no window. Measured on 10.4.11/G4: the same binary execs fine from
+a single-threaded process and returns ENOTSUP from a 4-thread one.
+
+So try the direct exec first -- it is correct wherever the kernel allows it --
+and fall back to exec'ing from a forked child, which is single-threaded by
+construction. The close-on-exec pipe is how the parent distinguishes "the child
+became the new engine" (write end closes, read returns 0) from "the child could
+not exec either" (child writes its errno). Only in the former case does the
+parent stand down; otherwise the caller still gets to report a real failure.
+
+Returns only on failure, with errno set to the reason.
+=================
+*/
+static void Sys_RestartExec( const char *exe, char **newargs )
+{
+	int fds[2];
+	pid_t pid;
+	int childerr = 0;
+	ssize_t got;
+
+	execv( exe, newargs );
+
+	/* execv returned, so it failed. Retry from a single-threaded child. */
+	if( pipe( fds ) != 0 )
+		return;
+	fcntl( fds[1], F_SETFD, FD_CLOEXEC );
+
+	pid = fork();
+	if( pid < 0 )
+	{
+		close( fds[0] );
+		close( fds[1] );
+		return;
+	}
+
+	if( pid == 0 )
+	{
+		close( fds[0] );
+		execv( exe, newargs );
+		childerr = errno;
+		write( fds[1], &childerr, sizeof( childerr ));
+		_exit( 127 );
+	}
+
+	close( fds[1] );
+	got = read( fds[0], &childerr, sizeof( childerr ));
+	close( fds[0] );
+
+	if( got == 0 )
+		_exit( 0 );        /* the child IS the engine now; leave without fuss */
+
+	if( childerr != 0 )
+		errno = childerr;  /* report the child's failure, not the parent's */
+}
+
 qboolean Sys_NewInstance( const char *gamedir, const char *finalmsg )
 {
 	qboolean replaced_arg = false;
@@ -629,9 +693,9 @@ qboolean Sys_NewInstance( const char *gamedir, const char *finalmsg )
 		wai_getExecutablePath( exe, exelen, NULL );
 		exe[exelen] = 0;
 
-		execv( exe, newargs );
+		Sys_RestartExec( exe, newargs );
 
-		// if execv returned, it's probably an error
+		// if it returned, it's probably an error
 		printf( "execv failed: %s", strerror( errno ));
 	}
 #endif
