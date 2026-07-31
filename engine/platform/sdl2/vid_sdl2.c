@@ -515,7 +515,15 @@ static void VID_SetWindowIcon( SDL_Window *hWnd )
 
 static qboolean VID_GetDisplayBounds( int display_index, SDL_Window *hWnd, SDL_Rect *rect )
 {
+	// SDL_GetDisplayUsableBounds arrived in 2.0.5 and the PowerPC slices link
+	// 2.0.3. SDL_GetDisplayBounds has been there since 2.0.0 and differs only in
+	// that it includes the space taken by the menu bar and the Dock, which is the
+	// right answer to fall back on rather than failing outright.
+#if SDL_VERSION_ATLEAST( 2, 0, 5 )
 	if( SDL_GetDisplayUsableBounds( display_index, rect ) != 0 )
+#else
+	if( SDL_GetDisplayBounds( display_index, rect ) != 0 )
+#endif
 	{
 		memset( rect, 0, sizeof( *rect ));
 		return false;
@@ -524,7 +532,11 @@ static qboolean VID_GetDisplayBounds( int display_index, SDL_Window *hWnd, SDL_R
 	wrect_t wrc = { 0 };
 	if( hWnd )
 	{
+		// 2.0.5. Without it the borders stay zero, which is what wrc was
+		// initialised to, so the bounds simply do not subtract the frame.
+#if SDL_VERSION_ATLEAST( 2, 0, 5 )
 		SDL_GetWindowBordersSize( hWnd, &wrc.top, &wrc.left, &wrc.bottom, &wrc.right );
+#endif
 	}
 	else
 	{
@@ -600,7 +612,11 @@ static rserr_t VID_SetScreenResolution( int width, int height, window_mode_t win
 			return rserr_unknown;
 		}
 
+		// 2.0.5. Before it, resizability could only be chosen when the window was
+		// created, via SDL_WINDOW_RESIZABLE, and cannot be changed afterwards.
+#if SDL_VERSION_ATLEAST( 2, 0, 5 )
 		SDL_SetWindowResizable( host.hWnd, SDL_TRUE );
+#endif
 		SDL_SetWindowBordered( host.hWnd, SDL_TRUE );
 
 		if( !FBitSet( SDL_GetWindowFlags( host.hWnd ), SDL_WINDOW_MAXIMIZED ))

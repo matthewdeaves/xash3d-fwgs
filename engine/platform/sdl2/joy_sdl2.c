@@ -177,7 +177,15 @@ static void SDLash_SetActiveGameController( SDL_JoystickID id )
 	{
 		qboolean have_gyro = false;
 
+		// SDL_GameControllerFromInstanceID arrived in 2.0.4 and the PowerPC slices
+		// link 2.0.3, which has no way to map an instance id back to an open
+		// controller. Leaving it NULL is safe: the only use of g_current_gamepad
+		// below is inside a 2.0.14 guard, so nothing dereferences it here.
+#if SDL_VERSION_ATLEAST( 2, 0, 4 )
 		g_current_gamepad = SDL_GameControllerFromInstanceID( id );
+#else
+		g_current_gamepad = NULL;
+#endif
 
 #if SDL_VERSION_ATLEAST( 2, 0, 14 )
 		have_gyro = SDL_GameControllerHasSensor( g_current_gamepad, SDL_SENSOR_GYRO );
