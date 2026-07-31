@@ -34,10 +34,13 @@ typedef struct
 	int	playtime;		// stream size in milliseconds
 } wavinfo_t;
 
+#ifndef XASH_TYPEDEF_mpg_ssize_t
+#define XASH_TYPEDEF_mpg_ssize_t
 #ifdef _MSC_VER // a1ba: MSVC6 don't have ssize_t
 typedef long		mpg_ssize_t;
 #else
 typedef ssize_t		mpg_ssize_t;
+#endif
 #endif
 
 // custom stdio

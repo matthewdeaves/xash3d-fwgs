@@ -62,14 +62,25 @@ typedef unsigned int uint;
 #endif
 typedef fs_offset_t	mpg_off_t;
 
+#ifndef XASH_TYPEDEF_mpg_ssize_t
+#define XASH_TYPEDEF_mpg_ssize_t
 #ifdef _MSC_VER // a1ba: MSVC6 don't have ssize_t
 typedef long		mpg_ssize_t;
 #else
 typedef ssize_t		mpg_ssize_t;
 #endif
+#endif
 
+// stdint.h already provides these wherever it exists. Declaring them again is
+// a repeated typedef, which GCC 4.0 rejects.
+#ifndef XASH_TYPEDEF_int16_t
+#define XASH_TYPEDEF_int16_t
 typedef short		int16_t;
+#endif
+#ifndef XASH_TYPEDEF_uint16_t
+#define XASH_TYPEDEF_uint16_t
 typedef unsigned short	uint16_t;
+#endif
 
 #include "synth.h"
 #include "index.h"
