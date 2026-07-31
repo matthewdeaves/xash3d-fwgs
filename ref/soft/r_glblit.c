@@ -739,8 +739,23 @@ static uint32_t Get8888PixelAt( int u, int start )
 	case 3:
 	case 4:
 	default:
-		s = vid.screen32[vid.buffer[start + u]];
+	{
+		// oldmac: endian-safe screenshot readback: vid.screen32 holds the pixel in the SDL
+		// surface's native channel layout (swblit.r/g/b mask), whose byte order
+		// differs by endianness. Decode via the masks to a canonical 0x00RRGGBB
+		// so the writer below is endian-independent (this turned ppc shots blue).
+		uint32_t v = vid.screen32[vid.buffer[start + u]];
+		uint rsh = FIRST_BIT( swblit.rmask ), gsh = FIRST_BIT( swblit.gmask ), bsh = FIRST_BIT( swblit.bmask );
+		uint rbits = COUNT_BITS( swblit.rmask ), gbits = COUNT_BITS( swblit.gmask ), bbits = COUNT_BITS( swblit.bmask );
+		uint r = ( v & swblit.rmask ) >> rsh;
+		uint g = ( v & swblit.gmask ) >> gsh;
+		uint b = ( v & swblit.bmask ) >> bsh;
+		r = rbits ? r * 255 / ( BIT( rbits ) - 1 ) : 0;
+		g = gbits ? g * 255 / ( BIT( gbits ) - 1 ) : 0;
+		b = bbits ? b * 255 / ( BIT( bbits ) - 1 ) : 0;
+		s = r << 16 | g << 8 | b;
 		break;
+	}
 	}
 	return s | 0xFF000000;
 }
@@ -771,7 +786,11 @@ qboolean GAME_EXPORT VID_ScreenShot( const char *filename, int shot_type )
 
 			for( int u = 0; u < vid.width; u++ )
 			{
-				pbuf[d] = Get8888PixelAt( u, start );
+				{ // oldmac: endian-safe screenshot readback
+					uint32_t px = Get8888PixelAt( u, start );
+					byte *pb = (byte *)&pbuf[d];
+					pb[0] = px; pb[1] = px >> 8; pb[2] = px >> 16; pb[3] = px >> 24;
+				}
 				d += swblit.stride;
 			}
 		}
@@ -787,7 +806,11 @@ qboolean GAME_EXPORT VID_ScreenShot( const char *filename, int shot_type )
 
 			for( int u = 0; u < vid.width; u++ )
 			{
-				pbuf[dstart + u] = Get8888PixelAt( u, start );
+				{ // oldmac: endian-safe screenshot readback
+					uint32_t px = Get8888PixelAt( u, start );
+					byte *pb = (byte *)&pbuf[dstart + u];
+					pb[0] = px; pb[1] = px >> 8; pb[2] = px >> 16; pb[3] = px >> 24;
+				}
 			}
 		}
 	}
