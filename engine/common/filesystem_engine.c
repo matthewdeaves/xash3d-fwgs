@@ -321,50 +321,31 @@ static qboolean FS_DetermineRootDirectory( char *out, size_t size )
                                // _NSGetExecutablePath prototype on the 10.3 SDK.
 #include <mach-o/dyld.h> // _NSGetExecutablePath
 #include <sys/stat.h>    // stat, S_ISREG
-#include <dirent.h>      // opendir, readdir
 
 /*
 ================
-FS_MacBundleLooksLikeGameRoot
+FS_MacBundleHasPayload
 
-True when dir has a subdirectory carrying a gamedir marker. This is the same
-test FS_ParseGameInfo makes later, so a directory that passes here is one the
-filesystem will actually be able to mount. Checking for the marker rather than
-for a known gamedir name keeps this working for a bundle built around any mod.
+True when dir exists and is a directory.
+
+That is the whole test, deliberately. This path is inside our own .app, so if it
+is there at all it is ours and nobody else could have put it there.
+
+It is tempting to be stricter and require a gamedir marker underneath, a
+liblist.gam or a gameinfo.txt. That is wrong here and was tried: our payload
+carries neither on purpose. FS_ParseGameInfo registers any directory holding one
+as a Custom Game, and listdirectory does not skip dotted names, so a marker in
+the read-only root is exactly what used to put a phantom entry in the Custom Game
+list. Requiring the marker means the root is never accepted, the payload is never
+mounted, and the engine reports the game libraries missing while they sit in the
+bundle unread.
 ================
 */
-static qboolean FS_MacBundleLooksLikeGameRoot( const char *dir )
+static qboolean FS_MacBundleHasPayload( const char *dir )
 {
-	static const char *const markers[] = { "liblist.gam", "gameinfo.txt" };
-	DIR *d = opendir( dir );
-	struct dirent *ent;
-	qboolean found = false;
+	struct stat st;
 
-	if( !d )
-		return false;
-
-	while( !found && ( ent = readdir( d )) != NULL )
-	{
-		char sub[MAX_OSPATH];
-		struct stat st;
-		size_t i;
-
-		if( ent->d_name[0] == '.' )
-			continue; // skips . and .. and anything hidden, which a gamedir never is
-
-		for( i = 0; i < sizeof( markers ) / sizeof( markers[0] ); i++ )
-		{
-			Q_snprintf( sub, sizeof( sub ), "%s/%s/%s", dir, ent->d_name, markers[i] );
-			if( stat( sub, &st ) == 0 && S_ISREG( st.st_mode ))
-			{
-				found = true;
-				break;
-			}
-		}
-	}
-
-	closedir( d );
-	return found;
+	return stat( dir, &st ) == 0 && S_ISDIR( st.st_mode ) ? true : false;
 }
 
 /*
@@ -411,7 +392,7 @@ static qboolean FS_MacBundleReadOnlyRoot( char *out, size_t size )
 	Q_snprintf( candidate, sizeof( candidate ), "%s/Resources/Half-Life", exe );
 	COM_FixSlashes( candidate );
 
-	if( !FS_MacBundleLooksLikeGameRoot( candidate ))
+	if( !FS_MacBundleHasPayload( candidate ))
 		return false;
 
 	Q_strncpy( out, candidate, size );
