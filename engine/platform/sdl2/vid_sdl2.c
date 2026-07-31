@@ -924,13 +924,29 @@ qboolean R_Init_Video( ref_graphic_apis_t type )
 		SDL_SetHint( SDL_HINT_OPENGL_ES_DRIVER, "1" );
 #endif // XASH_WIN32
 
+		// Every hint below is guarded on its own name. SDL declares each as a
+		// plain macro, so #ifdef asks precisely the right question: does the SDL we
+		// are building against know this hint. The PowerPC slices link SDL 2.0.3,
+		// which predates several of them, and none of these apply on macOS anyway,
+		// since they all concern X11 or Wayland. A version comparison would need
+		// updating every time a hint is added; this does not.
+#ifdef SDL_HINT_VIDEO_X11_FORCE_EGL
 		SDL_SetHint( SDL_HINT_VIDEO_X11_FORCE_EGL, "1" );
+#endif
 	}
 
+#ifdef SDL_HINT_QTWAYLAND_WINDOW_FLAGS
 	SDL_SetHint( SDL_HINT_QTWAYLAND_WINDOW_FLAGS, "OverridesSystemGestures" );
+#endif
+#ifdef SDL_HINT_QTWAYLAND_CONTENT_ORIENTATION
 	SDL_SetHint( SDL_HINT_QTWAYLAND_CONTENT_ORIENTATION, "landscape" );
+#endif
+#ifdef SDL_HINT_VIDEO_X11_XRANDR
 	SDL_SetHint( SDL_HINT_VIDEO_X11_XRANDR, "1" );
+#endif
+#ifdef SDL_HINT_VIDEO_X11_XVIDMODE
 	SDL_SetHint( SDL_HINT_VIDEO_X11_XVIDMODE, "1" );
+#endif
 
 	switch( type )
 	{
