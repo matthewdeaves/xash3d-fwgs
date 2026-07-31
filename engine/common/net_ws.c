@@ -304,7 +304,7 @@ static void NET_ResolveThread( void );
 #define create_thread( thread, pfn ) (( thread ) = SDL_CreateThread(( pfn ), "DNS resolver thread", NULL ))
 #define detach_thread( x )   SDL_DetachThread(( x ))
 typedef SDL_mutex *mutex_t;
-typedef SDL_Thread *thread_t;
+typedef SDL_Thread *net_thread_t;
 static int NET_ThreadStart( void *ununsed )
 {
 	NET_ResolveThread();
@@ -319,7 +319,7 @@ static int NET_ThreadStart( void *ununsed )
 #define create_thread( thread, pfn ) !pthread_create( &( thread ), NULL, ( pfn ), NULL )
 #define detach_thread( x )    pthread_detach( x )
 typedef pthread_mutex_t mutex_t;
-typedef pthread_t thread_t;
+typedef pthread_t net_thread_t;
 static void *NET_ThreadStart( void *unused )
 {
 	NET_ResolveThread();
@@ -333,7 +333,7 @@ static void *NET_ThreadStart( void *unused )
 #define create_thread( thread, pfn ) (( thread ) = CreateThread( NULL, 0, ( pfn ), NULL, 0, NULL ))
 #define detach_thread( x )   CloseHandle(( x ))
 typedef CRITICAL_SECTION mutex_t;
-typedef HANDLE thread_t;
+typedef HANDLE net_thread_t;
 DWORD WINAPI NET_ThreadStart( LPVOID unused )
 {
 	NET_ResolveThread();
@@ -348,7 +348,7 @@ static struct nsthread_s
 {
 	mutex_t  mutexns;
 	mutex_t  mutexres;
-	thread_t thread;
+	net_thread_t thread;
 	int      result;
 	string   hostname;
 	int      family;
