@@ -48,7 +48,7 @@ typedef struct httpserver_s
 typedef struct httpfile_s httpfile_t;
 typedef int (*http_process_fn_t)( httpfile_t *file );
 
-typedef struct httpfile_s
+struct httpfile_s
 {
 	struct httpfile_s *next;
 	httpserver_t *server;
@@ -90,7 +90,7 @@ typedef struct httpfile_s
 	// query or response, allocated when socket is created, freed in HTTP_FreeFile
 	char *buf;
 	int header_size, query_length, bytes_sent;
-} httpfile_t;
+};
 
 static struct http_static_s
 {
