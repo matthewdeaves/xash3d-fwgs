@@ -1388,9 +1388,15 @@ void GL_SetupAttributes( int safegl )
 	}
 	else
 	{
+		// oldmac: no profile hint on Apple: the Cocoa backend has no compatibility-profile
+		// path, so asking for one fails context creation outright, and the retry
+		// then lands on the safegl level that also drops the accelerated visual.
+		// Ask for no profile there and take the system legacy context.
+#if !defined( __APPLE__ )
 		if( !safegl )
 			gEngfuncs.GL_SetAttribute( REF_GL_CONTEXT_PROFILE_MASK, REF_GL_CONTEXT_PROFILE_COMPATIBILITY );
-		else
+#endif
+		if( safegl )
 		{
 			gEngfuncs.GL_SetAttribute( REF_GL_CONTEXT_MAJOR_VERSION, 1 );
 			gEngfuncs.GL_SetAttribute( REF_GL_CONTEXT_MINOR_VERSION, 1 );
