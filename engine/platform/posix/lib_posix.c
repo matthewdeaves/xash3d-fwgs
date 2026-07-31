@@ -35,6 +35,11 @@ GNU General Public License for more details.
 #include "library.h"
 #include "filesystem.h"
 #include "server.h"
+#if XASH_APPLE
+#include "whereami.h" // wai_getExecutablePath: resolve engine dylibs next to the
+                      // executable when launched from a .app (cwd = "/").
+                      // oldmac fix (include), rev 1.
+#endif
 #include "platform/android/lib_android.h"
 
 #ifdef XASH_NO_LIBDL
@@ -94,6 +99,24 @@ void *COM_LoadLibrary( const char *dllname, int build_ordinals_table, qboolean d
 		if( pHandle )
 			return pHandle;
 
+#if XASH_APPLE
+		// A Finder-launched .app runs with cwd = "/", and dyld never resolves a bare
+		// leaf name against the cwd. Retry next to the executable. (oldmac .app fix (bare), rev 1.)
+		{
+			char exepath[MAX_SYSPATH], fullpath[MAX_SYSPATH];
+			int dirlen = 0;
+			int exelen = wai_getExecutablePath( exepath, sizeof( exepath ) - 1, &dirlen );
+
+			if( exelen > 0 && dirlen > 0 && dirlen < (int)sizeof( exepath ))
+			{
+				exepath[dirlen] = '\0';
+				Q_snprintf( fullpath, sizeof( fullpath ), "%s/%s", exepath, COM_FileWithoutPath( dllname ));
+				void *pHandleApple = dlopen( fullpath, RTLD_NOW );
+				if( pHandleApple )
+					return pHandleApple;
+			}
+		}
+#endif
 		Q_snprintf( buf, sizeof( buf ), "Failed to find library %s", dllname );
 		COM_PushLibraryError( buf );
 		COM_PushLibraryError( dlerror() );
@@ -108,7 +131,25 @@ void *COM_LoadLibrary( const char *dllname, int build_ordinals_table, qboolean d
 		return NULL;
 	}
 
-	if( !( hInst->hInstance = dlopen( hInst->fullPath, RTLD_NOW ) ) )
+	hInst->hInstance = dlopen( hInst->fullPath, RTLD_NOW );
+#if XASH_APPLE
+	if( !hInst->hInstance )
+	{
+		// FS_FindLibrary hands back a bare leaf name before the filesystem is up
+		// (filesystem_stdio), which dyld can't resolve from a Finder .app (cwd="/").
+		// Retry next to the executable. (oldmac .app fix (resolved), rev 1.)
+		char exepath[MAX_SYSPATH], fullpath[MAX_SYSPATH];
+		int dirlen = 0;
+		int exelen = wai_getExecutablePath( exepath, sizeof( exepath ) - 1, &dirlen );
+		if( exelen > 0 && dirlen > 0 && dirlen < (int)sizeof( exepath ))
+		{
+			exepath[dirlen] = '\0';
+			Q_snprintf( fullpath, sizeof( fullpath ), "%s/%s", exepath, COM_FileWithoutPath( hInst->fullPath ));
+			hInst->hInstance = dlopen( fullpath, RTLD_NOW );
+		}
+	}
+#endif
+	if( !hInst->hInstance )
 	{
 		COM_PushLibraryError( dlerror() );
 		Mem_Free( hInst );
@@ -151,7 +192,15 @@ const char *COM_NameForFunction( void *hInstance, void *function )
 	Dl_info info = {0};
 	int ret = dladdr( (void*)function, &info );
 	if( ret && info.dli_sname )
-		return COM_GetPlatformNeutralName( info.dli_sname );
+	{
+		const char *name = info.dli_sname; // oldmac-macho-underscore (task#41, rev 1)
+		// Mach-O prepends '_' to symbols; on 10.3 dladdr returns it ("__ZN...").
+		// Normalize to the ELF-style "_ZN..." that COM_DetectMangleType expects
+		// so save/restore of function pointers round-trips. No-op elsewhere.
+		if( name[0] == '_' && name[1] == '_' && name[2] == 'Z' )
+			name++;
+		return COM_GetPlatformNeutralName( name );
+	}
 
 #ifdef XASH_ALLOW_SAVERESTORE_OFFSETS
 	return COM_OffsetNameForFunction( function );
