@@ -391,6 +391,21 @@ static void VID_GetWindowSizeInPixels( SDL_Window *window, SDL_Renderer *rendere
 	else
 		SDL_GL_GetDrawableSize( window, w, h );
 #endif
+
+	// oldmac: guard against a bogus drawable/output size: on big-endian PPC the software
+	// SDL_Renderer reports a byte-swapped/garbage pixel size (e.g. 33836644x13863),
+	// which corrupts surface-cache sizing and drops fullscreen to the console. Fall
+	// back to the logical window size whenever the reported size is implausible.
+	if( *w <= 0 || *h <= 0 || *w > 16384 || *h > 16384 )
+	{
+		int ww = 0, wh = 0;
+		SDL_GetWindowSize( window, &ww, &wh );
+		if( ww > 0 && wh > 0 )
+		{
+			*w = ww;
+			*h = wh;
+		}
+	}
 }
 
 void VID_SaveWindowSize( int width, int height )
