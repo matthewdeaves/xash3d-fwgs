@@ -513,7 +513,12 @@ qboolean Image_LoadMIP( const char *name, const byte *buffer, fs_offset_t filesi
 		}
 
 		Image_GetPaletteLMP( pal, rendermode );
-		image.d_currentpal[255] &= 0xFFFFFF;
+		// oldmac: clear alpha endian-correctly: these entries were packed with HostFourCC, so alpha is
+		// the high byte on little-endian and the low byte on big-endian. A literal
+		// 0xFFFFFF therefore clears alpha on one and RED on the other, which turned
+		// fullbright white into cyan on PowerPC. Building the mask with the same
+		// macro that built the entry lands it on alpha either way.
+		image.d_currentpal[255] &= ~HostFourCC( 0, 0, 0, 0xFF );
 
 		if( rendermode == LUMP_TEXGAMMA && FBitSet( image.flags, IMAGE_HAS_LUMA ))
 		{
