@@ -813,7 +813,17 @@ def configure(conf):
 		MACRO_TO_DESTOS[k] = c_config.MACRO_TO_DESTOS[k] # ordering is important
 	c_config.MACRO_TO_DESTOS  = MACRO_TO_DESTOS
 
+def oldmac_fixup_dest_cpu(conf):
+	# oldmac: cross-building the PowerPC slice on an Intel host. waf probes DEST_CPU with
+	# the bare compiler and never sees our '-arch ppc' (it lives in CFLAGS/CXXFLAGS), so it
+	# mis-detects x86 and compiler_optimizations.py then appends -march=pentium-m/-mtune=core2,
+	# which the ppc cc1 rejects. Force ppc so those x86 opt flags are never chosen.
+	allflags = ' '.join(conf.env.CFLAGS + conf.env.CXXFLAGS)
+	if conf.env.DEST_OS == 'darwin' and '-arch ppc' in allflags and conf.env.DEST_CPU != 'ppc':
+		conf.env.DEST_CPU = 'ppc'
+
 def post_compiler_cxx_configure(conf):
+	oldmac_fixup_dest_cpu(conf)
 	conf.msg('Target OS', conf.env.DEST_OS)
 	conf.msg('Target CPU', conf.env.DEST_CPU)
 	conf.msg('Target binfmt', conf.env.DEST_BINFMT)
@@ -829,6 +839,7 @@ def post_compiler_cxx_configure(conf):
 	return
 
 def post_compiler_c_configure(conf):
+	oldmac_fixup_dest_cpu(conf)
 	conf.msg('Target OS', conf.env.DEST_OS)
 	conf.msg('Target CPU', conf.env.DEST_CPU)
 	conf.msg('Target binfmt', conf.env.DEST_BINFMT)
