@@ -314,6 +314,111 @@ static qboolean FS_DetermineRootDirectory( char *out, size_t size )
 #endif // generic case
 }
 
+#if XASH_APPLE && !XASH_IOS
+#include <AvailabilityMacros.h> // MAC_OS_X_VERSION_MAX_ALLOWED, for the SDK test below.
+                               // Nothing else in this file pulls it in, and an
+                               // undefined macro here would silently pick the wrong
+                               // _NSGetExecutablePath prototype on the 10.3 SDK.
+#include <mach-o/dyld.h> // _NSGetExecutablePath
+#include <sys/stat.h>    // stat, S_ISREG
+#include <dirent.h>      // opendir, readdir
+
+/*
+================
+FS_MacBundleLooksLikeGameRoot
+
+True when dir has a subdirectory carrying a gamedir marker. This is the same
+test FS_ParseGameInfo makes later, so a directory that passes here is one the
+filesystem will actually be able to mount. Checking for the marker rather than
+for a known gamedir name keeps this working for a bundle built around any mod.
+================
+*/
+static qboolean FS_MacBundleLooksLikeGameRoot( const char *dir )
+{
+	static const char *const markers[] = { "liblist.gam", "gameinfo.txt" };
+	DIR *d = opendir( dir );
+	struct dirent *ent;
+	qboolean found = false;
+
+	if( !d )
+		return false;
+
+	while( !found && ( ent = readdir( d )) != NULL )
+	{
+		char sub[MAX_OSPATH];
+		struct stat st;
+		size_t i;
+
+		if( ent->d_name[0] == '.' )
+			continue; // skips . and .. and anything hidden, which a gamedir never is
+
+		for( i = 0; i < sizeof( markers ) / sizeof( markers[0] ); i++ )
+		{
+			Q_snprintf( sub, sizeof( sub ), "%s/%s/%s", dir, ent->d_name, markers[i] );
+			if( stat( sub, &st ) == 0 && S_ISREG( st.st_mode ))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+
+	closedir( d );
+	return found;
+}
+
+/*
+================
+FS_MacBundleReadOnlyRoot
+
+Point the read-only root at the payload inside our own .app.
+
+Finder launches with cwd = "/", so the bundle has to be found from the running
+executable. We require the genuine bundle shape - <name>.app/Contents/MacOS/<exe>
+- rather than testing whether the path happens to contain ".app" anywhere, and
+we only accept the result if it really holds a gamedir.
+================
+*/
+static qboolean FS_MacBundleReadOnlyRoot( char *out, size_t size )
+{
+	char exe[MAX_OSPATH], candidate[MAX_OSPATH];
+	uint32_t exelen = sizeof( exe );
+	char *macos, *contents;
+
+#if defined( MAC_OS_X_VERSION_MAX_ALLOWED ) && MAC_OS_X_VERSION_MAX_ALLOWED < 1040
+	// the 10.3.9 SDK takes an unsigned long *; same width on ppc32, different type
+	if( _NSGetExecutablePath( exe, (unsigned long *)&exelen ) != 0 )
+#else
+	if( _NSGetExecutablePath( exe, &exelen ) != 0 )
+#endif
+		return false;
+
+	// .../Half-Life.app/Contents/MacOS/xash3d.bin -> strip the leaf, then MacOS,
+	// and check the two names are the ones a real bundle has.
+	if(( macos = Q_strrchr( exe, '/' )) == NULL )
+		return false;
+	*macos = 0;
+
+	if(( contents = Q_strrchr( exe, '/' )) == NULL )
+		return false;
+	if( Q_strcmp( contents + 1, "MacOS" ))
+		return false;
+	*contents = 0;
+
+	if( Q_strrchr( exe, '/' ) == NULL || Q_strcmp( Q_strrchr( exe, '/' ) + 1, "Contents" ))
+		return false;
+
+	Q_snprintf( candidate, sizeof( candidate ), "%s/Resources/Half-Life", exe );
+	COM_FixSlashes( candidate );
+
+	if( !FS_MacBundleLooksLikeGameRoot( candidate ))
+		return false;
+
+	Q_strncpy( out, candidate, size );
+	return true;
+}
+#endif // XASH_APPLE && !XASH_IOS
+
 static qboolean FS_DetermineReadOnlyRootDirectory( char *out, size_t size )
 {
 	const char *env_rodir = getenv( "XASH3D_RODIR" );
@@ -330,6 +435,13 @@ static qboolean FS_DetermineReadOnlyRootDirectory( char *out, size_t size )
 #if XASH_IOS
 	Q_strncpy( out, IOS_GetExecDir(), size );
 	return true;
+#endif
+
+#if XASH_APPLE && !XASH_IOS
+	// last, so -rodir and XASH3D_RODIR still win: a developer running from a
+	// checkout must be able to override what the bundle happens to contain.
+	if( FS_MacBundleReadOnlyRoot( out, size ))
+		return true;
 #endif
 
 	return false;
