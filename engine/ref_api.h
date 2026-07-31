@@ -123,15 +123,25 @@ typedef enum
 	DEMO_QUAKE1
 } demo_mode;
 
-typedef enum window_mode_e
+#ifndef XASH_TYPEDEF_window_mode_t
+#define XASH_TYPEDEF_window_mode_t
+typedef enum window_mode_e window_mode_t;
+#endif
+
+enum window_mode_e
 {
 	WINDOW_MODE_WINDOWED = 0,
 	WINDOW_MODE_FULLSCREEN,
 	WINDOW_MODE_BORDERLESS,
 	WINDOW_MODE_COUNT,
-} window_mode_t;
+};
 
-typedef enum ref_window_type_e
+#ifndef XASH_TYPEDEF_ref_window_type_t
+#define XASH_TYPEDEF_ref_window_type_t
+typedef enum ref_window_type_e ref_window_type_t;
+#endif
+
+enum ref_window_type_e
 {
 	REF_WINDOW_TYPE_NULL = 0,
 	REF_WINDOW_TYPE_WIN32, // HWND
@@ -140,7 +150,7 @@ typedef enum ref_window_type_e
 	REF_WINDOW_TYPE_MACOS, // NSWindow*
 	REF_WINDOW_TYPE_SDL2, // SDL2 SDL_Window*
 	REF_WINDOW_TYPE_SDL3, // SDL3 SDL_Window*
-} ref_window_type_t;
+};
 
 typedef struct
 {
@@ -237,12 +247,17 @@ enum ref_defaultsprite_e
 
 // the order of first three is important!
 // so you can use this value in IEngineStudio.StudioIsHardware (but shouldn't)
-typedef enum ref_graphic_apis_e
+#ifndef XASH_TYPEDEF_ref_graphic_apis_t
+#define XASH_TYPEDEF_ref_graphic_apis_t
+typedef enum ref_graphic_apis_e ref_graphic_apis_t;
+#endif
+
+enum ref_graphic_apis_e
 {
 	REF_SOFTWARE,	// hypothetical: just make a surface to draw on, in software
 	REF_GL,		// create GL context
 	REF_D3D,	// Direct3D
-} ref_graphic_apis_t;
+};
 
 typedef enum
 {
