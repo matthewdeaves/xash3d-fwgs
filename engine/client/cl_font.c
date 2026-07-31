@@ -46,7 +46,12 @@ static int CL_LoadFontTexture( const char *fontname, uint texFlags, int *width )
 	if( !tex )
 		return 0;
 
-	int font_width = REF_GET_PARM( PARM_TEX_WIDTH, tex );
+	// The SOURCE width, not PARM_TEX_WIDTH. A renderer without NPOT support
+	// rescales the atlas up to a power of two and reports that as PARM_TEX_WIDTH,
+	// but every offset in the .fnt is an index into the image as authored. Using
+	// the rescaled width walks the glyph table with the wrong stride, so each
+	// glyph is cut from the wrong place. Both renderers expose the source size.
+	int font_width = REF_GET_PARM( PARM_TEX_SRC_WIDTH, tex );
 	if( !font_width )
 	{
 		ref.dllFuncs.GL_FreeTexture( tex );
@@ -211,8 +216,12 @@ int CL_DrawCharacter( float x, float y, int number, const rgba_t color, cl_font_
 	if( !number || !font->charWidths[number])
 		return 0;
 
-	int texw, texh;
-	R_GetTextureParms( &texw, &texh, font->hFontTexture );
+	// Source dimensions again, and for the same reason: fontRc was built in the
+	// coordinates of the image as authored, so it has to be normalised by those.
+	// A rescale stretches the content to fill the new size, so a feature keeps its
+	// normalised position and this stays correct on hardware that does rescale.
+	int texw = REF_GET_PARM( PARM_TEX_SRC_WIDTH, font->hFontTexture );
+	int texh = REF_GET_PARM( PARM_TEX_SRC_HEIGHT, font->hFontTexture );
 	if( !texw || !texh )
 		return font->charWidths[number];
 
