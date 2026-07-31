@@ -220,6 +220,20 @@ qboolean Image_LoadBMP( const char *name, const byte *buffer, fs_offset_t filesi
 	image.size = image.width * image.height * bpp;
 	image.rgba = Mem_Malloc( host.imagepool, image.size );
 
+	// oldmac: a BMP palette entry is an RGBQUAD, and its fourth byte is not alpha.
+	// It is rgbReserved and the format says it is zero, so reading it as
+	// alpha makes every palettised BMP fully transparent. Upstream gets away
+	// with that: a palettised image sets no IMAGE_HAS_ALPHA, so
+	// GL_SetTextureFormat picks a three-component internal format and the
+	// zero is dropped on upload. Anything that sets IMAGE_HAS_ALPHA for a
+	// 32-bit upload keeps the four-component format instead, and then the
+	// zero reaches the GPU. The WON menu button
+	// atlas is drawn with kRenderTransAdd, GL_SRC_ALPHA to GL_ONE, so the
+	// whole atlas was multiplied by zero and the main menu had no items on
+	// it. Issue #44. The three callers that DO put alpha in the palette,
+	// "#logo", the qfont and IL_OVERVIEW, all set IMAGE_HAS_ALPHA above, so
+	// they still get the byte.
+
 	for( row = rows - 1; row >= 0; row-- )
 	{
 		pixbuf = image.rgba + (row * columns * bpp);
@@ -261,7 +275,7 @@ qboolean Image_LoadBMP( const char *name, const byte *buffer, fs_offset_t filesi
 					*pixbuf++ = red = palette[palIndex][2];
 					*pixbuf++ = green = palette[palIndex][1];
 					*pixbuf++ = blue = palette[palIndex][0];
-					*pixbuf++ = palette[palIndex][3];
+					*pixbuf++ = FBitSet( image.flags, IMAGE_HAS_ALPHA ) ? palette[palIndex][3] : 255;
 				}
 				if( ++column == columns ) break;
 				palIndex = alpha & 0x0F;
@@ -277,7 +291,7 @@ qboolean Image_LoadBMP( const char *name, const byte *buffer, fs_offset_t filesi
 					*pixbuf++ = red = palette[palIndex][2];
 					*pixbuf++ = green = palette[palIndex][1];
 					*pixbuf++ = blue = palette[palIndex][0];
-					*pixbuf++ = palette[palIndex][3];
+					*pixbuf++ = FBitSet( image.flags, IMAGE_HAS_ALPHA ) ? palette[palIndex][3] : 255;
 				}
 				break;
 			case 8:
@@ -285,7 +299,7 @@ qboolean Image_LoadBMP( const char *name, const byte *buffer, fs_offset_t filesi
 				red = palette[palIndex][2];
 				green = palette[palIndex][1];
 				blue = palette[palIndex][0];
-				alpha = palette[palIndex][3];
+				alpha = FBitSet( image.flags, IMAGE_HAS_ALPHA ) ? palette[palIndex][3] : 255;
 
 				if( Image_CheckFlag( IL_KEEP_8BIT ))
 				{
