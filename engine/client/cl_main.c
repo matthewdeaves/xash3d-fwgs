@@ -3818,7 +3818,18 @@ void CL_Init( void )
 
 	// client must be always initialized last so it can fetch all cvars
 	if( !CL_LoadProgs( libpath ))
-		Host_Error( "can't initialize %s: %s\n", libpath, COM_GetLibraryError( ));
+	{
+		// oldmac: plain client dylib fallback. libpath above is arch-suffixed
+		// (cl_dlls/client_amd64.dylib); mods ship the unsuffixed cl_dlls/client.dylib
+		// that GoldSrc and the existing Mac ports use, so ONE fat ppc+x86_64 dylib can
+		// serve every slice. Mirrors the server-side retry in SV_InitGame().
+		string plainpath;
+
+		Q_snprintf( plainpath, sizeof( plainpath ), "%s/client." OS_LIB_EXT, GI->dll_path );
+
+		if( !Q_stricmp( plainpath, libpath ) || !CL_LoadProgs( plainpath ))
+			Host_Error( "can't initialize %s (nor %s): %s\n", libpath, plainpath, COM_GetLibraryError( ));
+	}
 
 	cls.build_num = 0;
 	cls.initialized = true;

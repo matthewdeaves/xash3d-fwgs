@@ -245,6 +245,41 @@ void COM_GetCommonLibraryPath( ECommonLibraryType eLibType, char *out, size_t si
 }
 
 /*
+==============
+COM_GameDllNameFromGameInfo
+
+The game library path exactly as the mod wrote it in its own liblist.gam or
+gameinfo.txt, for the platform we are running on, e.g. dlls/bshift.dylib.
+
+COM_GenerateServerLibraryPath rewrites that name to an architecture-suffixed one
+on every target except i386 Apple, which is what stops a single fat Mach-O dylib
+from serving a whole fleet. This returns the unsuffixed original so a caller can
+retry it when the generated name misses.
+
+Returns NULL when the mod named no library for this platform, so the caller tests
+one value and never has to size a buffer. The pointer is into the gameinfo, so
+copy it before doing anything that could reload the gameinfo.
+==============
+*/
+const char *COM_GameDllNameFromGameInfo( void )
+{
+	const char *name;
+
+	if( !GI )
+		return NULL;
+
+#if XASH_WIN32
+	name = GI->game_dll;
+#elif XASH_APPLE
+	name = GI->game_dll_osx;
+#else
+	name = GI->game_dll_linux;
+#endif
+
+	return COM_StringEmptyOrNULL( name ) ? NULL : name;
+}
+
+/*
 =============================================================================
 
 	C++ MANGLE CONVERSION

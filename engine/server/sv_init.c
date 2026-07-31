@@ -738,17 +738,37 @@ qboolean SV_InitGame( qboolean silent )
 
 	COM_GetCommonLibraryPath( LIBRARY_SERVER, dllpath, sizeof( dllpath ));
 
-	if( !SV_LoadProgs( dllpath ))
+	if( SV_LoadProgs( dllpath ))
 	{
-		if( !silent )
-			Sys_Warn( "can't initialize %s: %s\n", dllpath, COM_GetLibraryError( ));
-		else
-			Con_Printf( S_ERROR "can't initialize %s: %s\n", dllpath, COM_GetLibraryError( ));
-		return false; // failed to loading server.dll
+		// client frames will be allocated in SV_ClientConnect
+		return true;
 	}
 
-	// client frames will be allocated in SV_ClientConnect
-	return true;
+	// oldmac: the name above is architecture-suffixed (dlls/bshift_amd64.dylib). Mods
+	// ship the plain name from their own liblist.gam (dlls/bshift.dylib), which lets
+	// ONE fat ppc+x86_64 dylib serve the whole fleet. Retry it before giving up.
+	if( COM_StringEmpty( host.gamedll ))
+	{
+		const char *plain = COM_GameDllNameFromGameInfo();
+
+		if( plain && Q_stricmp( plain, dllpath ) != 0 )
+		{
+			string retry;
+
+			// copy first: SV_LoadProgs can reach the filesystem, and plain points
+			// into the gameinfo it would be reloading.
+			Q_strncpy( retry, plain, sizeof( retry ));
+
+			if( SV_LoadProgs( retry ))
+				return true;
+		}
+	}
+
+	if( !silent )
+		Sys_Warn( "can't initialize %s: %s\n", dllpath, COM_GetLibraryError( ));
+	else
+		Con_Printf( S_ERROR "can't initialize %s: %s\n", dllpath, COM_GetLibraryError( ));
+	return false; // failed to loading server.dll
 }
 
 /*

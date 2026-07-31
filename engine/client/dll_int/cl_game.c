@@ -3957,6 +3957,24 @@ static void CL_InitStudioAPI( void )
 	ref.dllFuncs.R_StudioSetDrawInterface( pStudioDraw );
 }
 
+/*
+=================
+CL_FreeProgsPools
+
+oldmac: release the two pools CL_LoadProgs allocates before it tries to load the
+library. Every failure exit from CL_LoadProgs leaves clgame.hInstance NULL, and
+the normal teardown that frees exactly these two, CL_UnloadProgs(), bails out on
+a NULL hInstance, so nothing else can reclaim them. Upstream that never shows,
+because a false return is followed by Host_Error. Our plain-name fallback retries
+instead, so each attempt would otherwise strand another pair.
+=================
+*/
+static void CL_FreeProgsPools( void )
+{
+	Mem_FreePool( &cls.mempool );
+	Mem_FreePool( &clgame.mempool );
+}
+
 qboolean CL_LoadProgs( const char *name )
 {
 	static playermove_t		gpMove;
@@ -3991,7 +4009,10 @@ qboolean CL_LoadProgs( const char *name )
 	clgame.hInstance = COM_LoadLibrary( name, false, false );
 
 	if( !clgame.hInstance )
+	{
+		CL_FreeProgsPools();
 		return false;
+	}
 
 	// delayed vgui initialization for internal support
 	if( try_internal_vgui_support && VGui_LoadProgs( clgame.hInstance ))
@@ -4043,6 +4064,7 @@ qboolean CL_LoadProgs( const char *name )
 
 		COM_FreeLibrary( clgame.hInstance );
 		clgame.hInstance = NULL;
+		CL_FreeProgsPools();
 		return false;
 	}
 
@@ -4067,6 +4089,7 @@ qboolean CL_LoadProgs( const char *name )
 		COM_FreeLibrary( clgame.hInstance );
 		Con_Reportf( "%s: can't init client API\n", __func__ );
 		clgame.hInstance = NULL;
+		CL_FreeProgsPools();
 		return false;
 	}
 

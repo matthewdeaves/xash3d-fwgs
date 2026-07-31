@@ -58,6 +58,7 @@ typedef enum
 } ECommonLibraryType;
 
 void COM_GetCommonLibraryPath( ECommonLibraryType eLibType, char *out, size_t size );
+const char *COM_GameDllNameFromGameInfo( void );
 
 typedef enum
 {
