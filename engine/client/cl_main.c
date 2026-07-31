@@ -3810,6 +3810,25 @@ void CL_Init( void )
 
 	COM_GetCommonLibraryPath( LIBRARY_CLIENT, libpath, sizeof( libpath ));
 
+	// oldmac: prefer a client library shipped by the CURRENT gamedir.
+	// libpath is arch-suffixed (cl_dlls/client_ppc.dylib) and FS_FindFile searches
+	// every mounted searchpath, not just the running mod's, so a mod that ships only
+	// the plain cl_dlls/client.dylib used to resolve this to VALVE's client and run
+	// with Half-Life's HUD and weapon code. Restricting the probe to the gamedir
+	// means we only override when the mod genuinely has client code of its own;
+	// a mod that deliberately inherits valve's client still gets it.
+	{
+		string gamedirlib;
+
+		Q_snprintf( gamedirlib, sizeof( gamedirlib ), "%s/client." OS_LIB_EXT, GI->dll_path );
+
+		if( !FS_FileExists( libpath, true ) && FS_FileExists( gamedirlib, true ))
+		{
+			Con_Reportf( "%s: using gamedir client library %s\n", __func__, gamedirlib );
+			Q_strncpy( libpath, gamedirlib, sizeof( libpath ));
+		}
+	}
+
 	S_Init();	// init sound
 	Voice_Init( VOICE_DEFAULT_CODEC, 3, true ); // init voice (do not open the device)
 
