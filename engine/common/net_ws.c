@@ -25,6 +25,11 @@ GNU General Public License for more details.
 #include <SDL_thread.h>
 #endif
 
+#if XASH_APPLE
+#include <ifaddrs.h> // getifaddrs, for NET_LocalAddress (oldmac)
+#include <net/if.h>  // IFF_UP, IFF_LOOPBACK
+#endif
+
 #define NET_USE_FRAGMENTS
 
 #define MAX_LOOPBACK		4
@@ -1763,6 +1768,103 @@ static void NET_OpenIP( qboolean change_port, int *sockets, const char *net_ifac
 	return;
 }
 
+#if XASH_APPLE
+/*
+=============
+NET_LocalAddressFromInterfaces
+
+The first address of this family that belongs to an interface which is up and
+is not the loopback. Comes out of the routing tables, so it costs nothing and
+cannot block, which is the entire point: see NET_LocalAddress below.
+
+A link-local IPv6 address is skipped. It is not reachable from anywhere except
+this one link, so it is not an address to publish as the server's.
+=============
+*/
+static qboolean NET_LocalAddressFromInterfaces( int family, struct sockaddr_storage *out )
+{
+	struct ifaddrs *list = NULL, *cur;
+	qboolean found = false;
+
+	if( getifaddrs( &list ) != 0 )
+		return false;
+
+	memset( out, 0, sizeof( *out ));
+
+	for( cur = list; cur != NULL; cur = cur->ifa_next )
+	{
+		if( !cur->ifa_addr || cur->ifa_addr->sa_family != family )
+			continue;
+
+		if( !FBitSet( cur->ifa_flags, IFF_UP ) || FBitSet( cur->ifa_flags, IFF_LOOPBACK ))
+			continue;
+
+		if( family == AF_INET6 )
+		{
+			const struct sockaddr_in6 *sa6 = (const struct sockaddr_in6 *)cur->ifa_addr;
+
+			if( IN6_IS_ADDR_LINKLOCAL( &sa6->sin6_addr ) || IN6_IS_ADDR_UNSPECIFIED( &sa6->sin6_addr ))
+				continue;
+
+			memcpy( out, sa6, sizeof( struct sockaddr_in6 ));
+		}
+		else
+		{
+			memcpy( out, cur->ifa_addr, sizeof( struct sockaddr_in ));
+		}
+
+		found = true;
+		break;
+	}
+
+	freeifaddrs( list );
+
+	return found;
+}
+#endif // XASH_APPLE
+
+/*
+=============
+NET_LocalAddress
+
+oldmac: our own address comes from the interface list, never from DNS.
+
+NET_DetermineLocalAddress runs on the frame loop, once, the first time the
+engine is put into multiplayer, which for a player is the moment the LAN game
+browser opens. Upstream answers "which address am I" by resolving our own
+hostname with a blocking getaddrinfo(). On a LAN whose DNS server does not
+answer for the DHCP hostname that call takes the resolver's whole budget, 3
+tries times 5 seconds, and the game is frozen for all 15 of them: measured on
+the bench G5, and caught in a stack sample sitting in ds_getaddrinfo. See
+issue #34.
+
+So when the name we are about to look up is our own hostname, which is the
+default configuration, read the address out of the interface list instead. A
+string the user pinned into `ip` or `ip6` still goes the old way: it is almost
+always a literal, which is parsed with no lookup at all, and a hostname there
+was asked for explicitly.
+=============
+*/
+static qboolean NET_LocalAddress( const char *string, const char *hostname, netadr_t *adr, int family )
+{
+#if XASH_APPLE
+	struct sockaddr_storage s;
+
+	if( !Q_strcmp( string, hostname ))
+	{
+		memset( adr, 0, sizeof( *adr ));
+
+		if( !NET_LocalAddressFromInterfaces( family, &s ))
+			return false;
+
+		NET_SockadrToNetadr( &s, adr );
+		return true;
+	}
+#endif // XASH_APPLE
+
+	return NET_StringToAdrEx( string, adr, family );
+}
+
 /*
 ================
 NET_DetermineLocalAddress
@@ -1796,7 +1898,7 @@ static void NET_DetermineLocalAddress( void )
 			Q_strncpy( buff, net_ipname.string, sizeof( buff ));
 		else Q_strncpy( buff, hostname, sizeof( buff ));
 
-		if( NET_StringToAdrEx( buff, &net_local, AF_INET ))
+		if( NET_LocalAddress( buff, hostname, &net_local, AF_INET ))
 		{
 			namelen = sizeof( struct sockaddr_in );
 
@@ -1819,7 +1921,7 @@ static void NET_DetermineLocalAddress( void )
 			Q_strncpy( buff, net_ip6name.string, sizeof( buff ));
 		else Q_strncpy( buff, hostname, sizeof( buff ));
 
-		if( NET_StringToAdrEx( buff, &net6_local, AF_INET6 ))
+		if( NET_LocalAddress( buff, hostname, &net6_local, AF_INET6 ))
 		{
 			namelen = sizeof( struct sockaddr_in6 );
 
