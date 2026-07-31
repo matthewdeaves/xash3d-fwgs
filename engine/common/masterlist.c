@@ -414,8 +414,31 @@ Informs all masters that this server is going down
 */
 void NET_MasterShutdown( void )
 {
+	master_t *m;
+
 	NET_Config( true, false ); // allow remote
-	while( NET_SendToMasters( NS_SERVER, 2, S2M_SHUTDOWN, PROTO_CURRENT ));
+
+	// oldmac: no hostname is resolved on the frame loop. Upstream spins here:
+	// NET_SendToMasters returns true while any master name is still with the
+	// resolver thread, so the loop holds the main thread until every master in
+	// the list has resolved or timed out, one at a time. Quitting a listen
+	// server with no route to them cost one resolver timeout per master name,
+	// which is why a Cmd-Q could register long after it was pressed. See #29.
+	//
+	// One pass, to the masters whose address we already have. That is exactly
+	// the set worth telling, because announcing to a master is what put its
+	// address in m->adr, and the notice is best effort in any case.
+	for( m = ml.head; m; m = m->next )
+	{
+		if( m->gs ) // GoldSrc masters take no shutdown notice
+			continue;
+
+		if( !m->adr.type ) // never resolved, so never announced to
+			continue;
+
+		NET_SendPacket( NS_SERVER, 2, S2M_SHUTDOWN, m->adr );
+	}
+
 	NET_ClearSendState();
 }
 

@@ -1215,6 +1215,70 @@ void CL_SendGoldSrcConnectPacket( netadr_t adr, int challenge, const void *ticke
 }
 
 /*
+=================
+CL_ServerAddressIsResolved
+
+oldmac: no hostname is resolved on the frame loop (rev 2).
+
+CL_SendConnectPacket runs on the frame loop, from CL_ConnectionlessPacket, and
+upstream resolves cls.servername there with the blocking NET_StringToAdr. A name
+the LAN's DNS server will not answer for costs the resolver's full budget, 3
+tries times 5 seconds, and the engine draws nothing and reads no input for all
+of it. See issue #29.
+
+It does not need to resolve at all. The address is already known by the time we
+get here, because the only way to get here is a challenge arriving in reply to
+a getchallenge, and CL_CheckForResend resolved the name and stored the answer in
+cls.serveradr before it sent that getchallenge, a few lines up in the same
+function. The other callers are covered too: the bandwidth-test completion paths
+run after CL_CheckForResend has stored it, and the local listen server branch
+sets cls.serveradr to NA_LOOPBACK immediately before calling here. So read
+cls.serveradr back.
+
+Asking the async resolver a second time is what rev 1 of this patch did, and it
+does not work: NET_StringToAdrNB has a SINGLE result slot which is CONSUMED on
+read (net_ws.c clears nsthread.hostname on a hit). CL_CheckForResend has already
+taken the answer, so the second ask finds the slot empty, re-dispatches the
+worker and returns NET_EAI_AGAIN. That drops the challenge, CL_CheckForResend
+sends another getchallenge, and the cycle repeats until connect_retry reaches
+CL_CONNECTION_RETRIES and the client disconnects. It is not intermittent: the
+async path returns AGAIN on a first ask however warm the OS cache is, because it
+must hand off to the thread. The visible result was an instant bounce back to
+the main menu on any connect by HOSTNAME. That is not issue #38: #38 joins from
+the LAN browser, which hands over an IP literal, and NET_StringToSockaddr takes
+its numeric fast path before the resolver is reached, so rev 1 could not fire
+there. An earlier version of this comment claimed the link and it was wrong.
+
+NA_UNDEFINED is the zero value of netadrtype_t, so an address nobody ever
+resolved fails the test and takes the same error path upstream took.
+
+WHAT ACTUALLY MAKES THIS SAFE, because the test above does not do it alone.
+Read literally, NET_NetadrType( adr ) != NA_UNDEFINED asks "has anything been
+resolved since the last CL_Disconnect", not "was it resolved for THIS request".
+Every current caller is covered, but by something outside this helper:
+
+  - the two CL_Challenge sites are behind CL_IsFromConnectingServer( from ),
+    which is NET_IsLocalAddress( from ) || NET_CompareAdr( cls.serveradr, from ).
+    A challenge from anywhere other than the address in cls.serveradr is dropped
+    before it can get here, and a zeroed cls.serveradr matches nothing because
+    NET_CompareAdr returns false as soon as the two types differ.
+  - the two CL_CheckForResend sites write cls.serveradr on the immediately
+    preceding lines, unconditionally.
+
+So it is sound because all four sites happen to be guarded, not because the
+predicate is self-sufficient. ANYONE ADDING A FIFTH CALL SITE must check that
+cls.serveradr belongs to the server they are answering; this helper will not
+tell them.
+=================
+*/
+static qboolean CL_ServerAddressIsResolved( netadr_t *adr )
+{
+	*adr = cls.serveradr;
+
+	return NET_NetadrType( adr ) != NA_UNDEFINED;
+}
+
+/*
 =======================
 CL_SendConnectPacket
 
@@ -1229,7 +1293,7 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 
 	protinfo[0] = 0;
 
-	if( !NET_StringToAdr( cls.servername, &adr ))
+	if( !CL_ServerAddressIsResolved( &adr )) // oldmac: no hostname is resolved on the frame loop (rev 2)
 	{
 		Con_Printf( "%s: bad server address\n", __func__ );
 		cls.connect_time = 0;
@@ -1878,8 +1942,19 @@ static void CL_QueryServer_f( void )
 
 	NET_Config( true, false );
 
-	if( !NET_StringToAdr( Cmd_Argv( 1 ), &adr ))
+	// oldmac: no hostname is resolved on the frame loop. The menu issues one
+	// ui_queryserver per favourite or history entry, in a loop, and those
+	// entries can be hostnames because the "Add server" box accepts one. Each
+	// blocking resolve froze the whole engine for a resolver timeout. On
+	// NET_EAI_AGAIN say nothing and drop the query: the browser re-issues it on
+	// its next refresh, by which time the worker thread has an answer. See #29.
+	switch( NET_StringToAdrNB( Cmd_Argv( 1 ), &adr, false ))
 	{
+	case NET_EAI_OK:
+		break;
+	case NET_EAI_AGAIN:
+		return;
+	default:
 		Con_Printf( S_ERROR "%s: can't parse %s", __func__, Cmd_Argv( 1 ));
 		return;
 	}
