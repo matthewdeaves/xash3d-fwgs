@@ -1233,6 +1233,17 @@ void VID_Info_f( void )
 
 platform_orientation_t Platform_GetDisplayOrientation( void )
 {
+	// SDL_GetDisplayOrientation and the SDL_ORIENTATION_ values arrived in SDL
+	// 2.0.9. The PowerPC slices link SDL 2.0.3, the newest that runs on 10.3 and
+	// 10.4, so this whole function has to be compiled out there. These are enum
+	// constants rather than macros, so unlike the hints they cannot be tested with
+	// #ifdef and need a version comparison.
+	//
+	// Reporting an unknown orientation is the correct answer on a desktop Mac in
+	// any case: the display does not rotate, and every caller already handles
+	// ORIENTATION_UNKNOWN because that is what SDL returns for a display whose
+	// orientation it cannot determine.
+#if SDL_VERSION_ATLEAST( 2, 0, 9 )
 	if( host.hWnd )
 	{
 		int display_index = SDL_GetWindowDisplayIndex( host.hWnd );
@@ -1253,6 +1264,7 @@ platform_orientation_t Platform_GetDisplayOrientation( void )
 			}
 		}
 	}
+#endif // SDL_VERSION_ATLEAST( 2, 0, 9 )
 
 	return ORIENTATION_UNKNOWN;
 }
