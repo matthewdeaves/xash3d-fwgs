@@ -885,7 +885,9 @@ qboolean AVI_Initailize( void )
 {
 	if( XASH_AVI == AVI_NULL )
 	{
-		Con_Printf( "AVI: Not supported\n" );
+		// oldmac: build configuration, not a fault: XASH_AVI is AVI_NULL whenever
+		// the engine was built without FFmpeg, so this is fixed at compile time.
+		Con_Reportf( "AVI: not supported, built without FFmpeg\n" );
 		return false;
 	}
 

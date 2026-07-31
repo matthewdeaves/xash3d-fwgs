@@ -5314,7 +5314,14 @@ qboolean SV_LoadProgs( const char *name )
 
 	if( !SV_InitPhysicsAPI( ))
 	{
-		Con_Printf( S_WARN "%s: couldn't get physics API\n", __func__ );
+		// oldmac: declining the interface is not a failure. hlsdk-portable exports
+		// Server_GetPhysicsInterface only to detect Xash3D and returns FALSE on
+		// purpose, and the engine ends up in exactly the state it would have
+		// reached had the symbol been missing, which it does not warn about.
+		// State what was OBSERVED, not why: the engine cannot tell a deliberate
+		// decline from a FALSE returned over a version mismatch, and a
+		// third-party dylib might mean the latter.
+		Con_Reportf( "%s: Server_GetPhysicsInterface returned FALSE, no extended physics\n", __func__ );
 	}
 
 	// grab function SV_SaveGameComment
