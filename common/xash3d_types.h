@@ -29,7 +29,10 @@
 	#define MAYBE_ALIGNED( x )
 #endif // !defined( MAYBE_ALIGNED )
 
-typedef uint8_t  byte;
+#ifndef XASH_TYPEDEF_byte
+#define XASH_TYPEDEF_byte
+typedef uint8_t byte;
+#endif
 typedef float    vec_t;
 typedef vec_t    vec2_t[2];
 #ifndef vec3_t // SDK renames it to Vector
@@ -42,7 +45,10 @@ typedef byte     rgb_t[3];  // unsigned byte colorpack
 typedef vec_t    matrix3x4[3][4] MAYBE_ALIGNED( 16 );
 typedef vec_t    matrix4x4[4][4] MAYBE_ALIGNED( 16 );
 typedef uint32_t poolhandle_t;
+#ifndef XASH_TYPEDEF_word
+#define XASH_TYPEDEF_word
 typedef uint16_t word;
+#endif
 typedef uint32_t dword;
 typedef char     string[MAX_STRING];
 typedef off_t    fs_offset_t;
@@ -51,7 +57,10 @@ typedef int      fs_size_t; // return type of _read, _write funcs
 #else // !XASH_WIN32
 typedef ssize_t  fs_size_t;
 #endif // !XASH_WIN32
+#ifndef XASH_TYPEDEF_uint
+#define XASH_TYPEDEF_uint
 typedef unsigned int uint;
+#endif
 typedef void *(*pfnCreateInterface_t)( const char *, int * );
 
 // Quake definition

@@ -47,10 +47,19 @@ typedef struct mpg123_handle_s	mpg123_handle_t;
 //#define IEEE_FLOAT
 
 // begin used typedefs
-typedef unsigned char	byte;
-typedef unsigned short	word;
+#ifndef XASH_TYPEDEF_byte
+#define XASH_TYPEDEF_byte
+typedef uint8_t byte;
+#endif
+#ifndef XASH_TYPEDEF_word
+#define XASH_TYPEDEF_word
+typedef uint16_t word;
+#endif
 typedef unsigned long	ulong;
-typedef unsigned int	uint;
+#ifndef XASH_TYPEDEF_uint
+#define XASH_TYPEDEF_uint
+typedef unsigned int uint;
+#endif
 typedef fs_offset_t	mpg_off_t;
 
 #ifdef _MSC_VER // a1ba: MSVC6 don't have ssize_t
