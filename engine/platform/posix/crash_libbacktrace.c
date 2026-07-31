@@ -104,11 +104,36 @@ static void Sys_BacktracePrintSyminfo( void *data, uintptr_t pc, const char *sym
 	}
 	else
 	{
+		// oldmac: dladdr needs no debug info, which is the whole point: these
+		// builds carry no -g and no dSYM, so this is the path every frame
+		// takes. Print the module and the offset INTO it, because that pair is
+		// what atos resolves exactly against a build of the same commit. The
+		// symbol is the nearest exported one, so it names the neighbourhood
+		// rather than the exact static function.
 		if( module_name )
-			Sys_AppendPrint( pd, "%2d: %p (%s)\n", pd->idx++, pc, module_name );
+		{
+			const char *base = COM_FileWithoutPath( module_name );
+			unsigned long off = (unsigned long)( pc - (uintptr_t)dlinfo.dli_fbase );
+
+			if( dlinfo.dli_sname )
+				Sys_AppendPrint( pd, "%2d: %s+0x%lx <%s+%ld> [%p]\n", pd->idx++,
+					base, off, dlinfo.dli_sname,
+					(long)( pc - (uintptr_t)dlinfo.dli_saddr ), (void *)pc );
+			else
+				Sys_AppendPrint( pd, "%2d: %s+0x%lx [%p]\n", pd->idx++, base, off,
+					(void *)pc );
+		}
 		else
-			Sys_AppendPrint( pd, "%2d: %p\n", pd->idx++, pc );
+		{
+			Sys_AppendPrint( pd, "%2d: %p\n", pd->idx++, (void *)pc );
+		}
 	}
+}
+
+// Frame-level failures are expected on a stripped build and are handled by
+// falling back to dladdr, so they are not worth a line each.
+static void Sys_BacktraceErrorSilent( void *data, const char *msg, int errnum )
+{
 }
 
 static int Sys_BacktracePrintFull( void *data, uintptr_t pc, const char *filename, int lineno, const char *function )
@@ -139,8 +164,33 @@ static int Sys_BacktracePrintFull( void *data, uintptr_t pc, const char *filenam
 	}
 	else
 	{
-		backtrace_syminfo( g_bt_state, pc, Sys_BacktracePrintSyminfo, Sys_BacktraceError, data );
+		// oldmac: no backtrace_syminfo here: it failed on every frame of these
+		// stripped builds, and it was handed Sys_BacktraceError, the STARTUP
+		// callback, which sets enable_libbacktrace = false. One unsymbolised
+		// frame therefore switched off the whole facility mid-trace. Go
+		// straight to the dladdr path instead.
+		Sys_BacktracePrintSyminfo( data, pc, NULL, 0, 0 );
 	}
+
+	return 0;
+}
+
+// oldmac: every frame, with or without debug info. backtrace_full calls its frame
+// callback only for frames it can describe from DWARF, and these builds have
+// none, so it reported one error per frame and never called it at all. The
+// unwinder was working throughout; only symbolisation failed.
+// backtrace_simple hands us every program counter, and each is then resolved
+// by debug info if there is any and by dladdr if there is not.
+static int Sys_BacktraceFrame( void *data, uintptr_t pc )
+{
+	struct print_data *pd = data;
+	int before = pd->idx;
+
+	backtrace_pcinfo( g_bt_state, pc, Sys_BacktracePrintFull,
+		Sys_BacktraceErrorSilent, data );
+
+	if( pd->idx == before )
+		Sys_BacktracePrintSyminfo( data, pc, NULL, 0, 0 );
 
 	return 0;
 }
@@ -156,15 +206,46 @@ int Sys_CrashDetailsLibbacktrace( int logfd, char *message, int len, size_t max_
 		.skip_wrappers = true,
 	};
 
-	backtrace_full( g_bt_state, 0, Sys_BacktracePrintFull, Sys_BacktracePrintError, &pd );
+	// dladdr is NOT async-signal-safe: it takes the dyld lock
+	// and can allocate. Reaching it is the price of a symbolised
+	// trace on a stripped build, but a fault taken inside dyld or
+	// malloc could deadlock here, and a crash handler that hangs
+	// is worse than one that says little. Cap it. SIGALRM's
+	// default action ends the process, so the worst case becomes a
+	// five second wait rather than a permanent stall, and alarm()
+	// itself is async-signal-safe.
+	alarm( 5 );
+
+	backtrace_simple( g_bt_state, 0, Sys_BacktraceFrame,
+		Sys_BacktracePrintError, &pd );
+
+	alarm( 0 );
 
 	return pd.len;
+}
+
+// oldmac: retry unthreaded: libbacktrace refuses threaded mode unless it was
+// configured with HAVE_SYNC_FUNCTIONS, which the gcc-4.0 slices never get
+// because gcc-4.0 has no __sync builtins. Swallow that first refusal so the
+// retry is not announced; a real failure is still reported by the second.
+static void Sys_BacktraceErrorQuiet( void *data, const char *msg, int errnum )
+{
 }
 
 qboolean Sys_SetupLibbacktrace( const char *argv0 )
 {
 	enable_libbacktrace = true;
-	g_bt_state = backtrace_create_state( argv0, true, Sys_BacktraceError, NULL );
+	g_bt_state = backtrace_create_state( argv0, true, Sys_BacktraceErrorQuiet, NULL );
+
+	if( g_bt_state == NULL )
+	{
+		// The state is written once here at startup and thereafter only read,
+		// from a fatal signal handler, so it is never used from two threads at
+		// once and unthreaded is the accurate answer rather than a concession.
+		enable_libbacktrace = true;
+		g_bt_state = backtrace_create_state( argv0, false, Sys_BacktraceError, NULL );
+	}
+
 	return g_bt_state != NULL && enable_libbacktrace;
 }
 
