@@ -149,7 +149,7 @@ static console_t		con;
 
 static void Con_ClearField( field_t *edit );
 static void Field_CharEvent( field_t *edit, int ch );
-static void Con_InvalidateFonts( void );
+void Con_InvalidateFonts( void );
 
 static void Con_LoadHistory( con_history_t *self );
 static void Con_SaveHistory( con_history_t *self );

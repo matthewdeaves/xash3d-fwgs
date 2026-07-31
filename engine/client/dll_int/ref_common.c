@@ -609,6 +609,16 @@ void R_Shutdown( void )
 	// correctly free all models before render unload
 	// change this if need add online render changing
 	Mod_FreeAll();
+
+	// oldmac: the console font holds a texture the outgoing renderer owns,
+	// so it has to go the same way the sprites above just did, and for the
+	// same reason. CL_FreeFont calls through ref.dllFuncs.GL_FreeTexture, so
+	// this MUST run before R_UnloadProgs unloads the library. Without it
+	// con.chars[] keep valid = true, Con_LoadConsoleFont returns early on the
+	// way back up, and every glyph is then sampled from whatever texture the
+	// new renderer put in the dead handle's slot. Issue #43: the build string
+	// came back as garbage after gl to soft and back.
+	Con_InvalidateFonts();
 	R_UnloadProgs();
 	ref.initialized = false;
 }

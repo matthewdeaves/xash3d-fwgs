@@ -1112,6 +1112,7 @@ extern convar_t con_fontsize;
 int Con_Visible( void );
 qboolean Con_FixedFont( void );
 void Con_VidInit( void );
+void Con_InvalidateFonts( void );
 void Con_Shutdown( void );
 void Con_ToggleConsole_f( void );
 void Con_ClearNotify( void );
