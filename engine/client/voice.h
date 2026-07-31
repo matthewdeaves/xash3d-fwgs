@@ -21,11 +21,11 @@ GNU General Public License for more details.
 #include "protocol.h" // MAX_CLIENTS
 #include "sound.h"
 
-typedef struct OpusCustomEncoder OpusCustomEncoder;
-typedef struct OpusCustomDecoder OpusCustomDecoder;
-typedef struct OpusCustomMode OpusCustomMode;
-typedef struct OpusEncoder OpusEncoder;
-typedef struct OpusDecoder OpusDecoder;
+// No typedefs for the Opus types here. Opus declares its own in opus.h and
+// opus_custom.h without a guard, so repeating them means two identical
+// typedefs in any translation unit that sees both. That only became legal in
+// C11, and GCC 4.0 on the 10.3 and 10.4 SDKs rejects it. Every use below is a
+// pointer, so the struct tags alone are enough and nothing has to be declared.
 
 #define VOICE_LOOPBACK_INDEX    ( -2 )
 #define VOICE_LOCALCLIENT_INDEX ( -1 )
@@ -91,12 +91,12 @@ typedef struct voice_state_s
 	voice_status_t    local;
 
 	// opus stuff
-	OpusCustomMode    *custom_mode;
-	OpusCustomEncoder *encoder;
-	OpusCustomDecoder *decoders[MAX_CLIENTS];
+	struct OpusCustomMode    *custom_mode;
+	struct OpusCustomEncoder *encoder;
+	struct OpusCustomDecoder *decoders[MAX_CLIENTS];
 
-	OpusEncoder *gs_encoder;
-	OpusDecoder *gs_decoders[MAX_CLIENTS];
+	struct OpusEncoder *gs_encoder;
+	struct OpusDecoder *gs_decoders[MAX_CLIENTS];
 
 	// audio info
 	uint width;
