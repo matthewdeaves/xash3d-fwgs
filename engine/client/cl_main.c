@@ -3567,6 +3567,57 @@ static void CL_ListMessages_f( void )
 
 /*
 =================
+CL_TimeRefresh_f
+
+Demo-free deterministic render benchmark. Renders <numframes> frames flat-out
+(bypassing the host-loop frame pacing) while spinning the view a full 360
+degrees from the current position, then reports the average fps. Unlike
+"timedemo" it needs no demo file, so it is immune to the big-endian demo-format
+bugs on PPC and yields identical, reproducible numbers on every machine and
+renderer. This is the classic id-engine "timerefresh".
+
+Usage: timerefresh [numframes]   (default 128)
+=================
+*/
+static void CL_TimeRefresh_f( void )
+{
+	int	i, frames = 128;
+	double	start, stop, timelen;
+	float	saved_yaw;
+
+	if( cls.state != ca_active )
+	{
+		Con_Printf( "timerefresh: not connected (load a map first)\n" );
+		return;
+	}
+
+	if( Cmd_Argc() > 1 )
+		frames = Q_atoi( Cmd_Argv( 1 ));
+	if( frames < 1 )
+		frames = 128;
+
+	saved_yaw = cl.viewangles[YAW];
+
+	start = Platform_DoubleTime();
+	for( i = 0; i < frames; i++ )
+	{
+		cl.viewangles[YAW] = anglemod(( (float)i / (float)frames ) * 360.0f );
+		SCR_UpdateScreen();
+	}
+	stop = Platform_DoubleTime();
+
+	cl.viewangles[YAW] = saved_yaw;
+
+	timelen = stop - start;
+	if( timelen <= 0.0 )
+		timelen = 0.0001;
+
+	Con_Printf( "timerefresh: %i frames %5.3f seconds %5.3f fps\n",
+		frames, timelen, (double)frames / timelen );
+}
+
+/*
+=================
 CL_InitLocal
 =================
 */
@@ -3694,6 +3745,7 @@ static void CL_InitLocal( void )
 	Cmd_AddRestrictedCommand( "record", CL_Record_f, "record a demo" );
 	Cmd_AddCommand ("playdemo", CL_PlayDemo_f, "play a demo" );
 	Cmd_AddCommand ("timedemo", CL_TimeDemo_f, "demo benchmark" );
+	Cmd_AddCommand ("timerefresh", CL_TimeRefresh_f, "render N frames flat-out and report fps (demo-free benchmark)" );
 	Cmd_AddRestrictedCommand( "killdemo", CL_DeleteDemo_f, "delete a specified demo file" );
 	Cmd_AddCommand ("startdemos", CL_StartDemos_f, "start playing back the selected demos sequentially" );
 	Cmd_AddCommand ("demos", CL_Demos_f, "restart looping demos defined by the last startdemos command" );
