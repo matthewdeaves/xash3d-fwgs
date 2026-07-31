@@ -317,7 +317,19 @@ typedef struct
 #define BONE_USED_BY_BONE_MERGE		0x00000800
 
 // bones
-typedef struct mstudiobone_s
+/*
+ * GCC 4.0, which is the compiler on the Mac OS X 10.3 and 10.4 SDKs, rejects a
+ * repeated typedef even when the two are identical. Repeating one only became
+ * legal in C11. Both this header and engine/studio.h want these names, so the
+ * pair is declared exactly once, here, behind a shared guard.
+ */
+#ifndef XASH_MSTUDIO_TYPEDEFS_DECLARED
+#define XASH_MSTUDIO_TYPEDEFS_DECLARED
+typedef struct mstudiobone_s mstudiobone_t;
+typedef struct mstudioanim_s mstudioanim_t;
+#endif
+
+struct mstudiobone_s
 {
 	// the bone name
 	char		name[MAXSTUDIONAME];
@@ -351,7 +363,7 @@ typedef struct mstudiobone_s
 	 * scale[5] = rotation.Z scale
 	 */
 	vec_t		scale[6];
-} mstudiobone_t;
+};
 
 #define STUDIO_PROC_AXISINTERP	1
 #define STUDIO_PROC_QUATINTERP	2
@@ -843,10 +855,10 @@ typedef struct
 } mstudioposeparamdesc_t;
 
 // offsets to the animation frames
-typedef struct mstudioanim_s
+struct mstudioanim_s
 {
 	uint16_t	offset[6];
-} mstudioanim_t;
+};
 
 // animation frames
 typedef union

@@ -178,8 +178,17 @@ typedef struct mplane_s
 	byte    pad[2];
 } mplane_t;
 
+/*
+ * GCC 4.0, which is the compiler on the Mac OS X 10.3 and 10.4 SDKs, rejects a
+ * repeated typedef even when the two are identical. Repeating one only became
+ * legal in C11. Both this header and engine/studio.h want these names, so the
+ * pair is declared exactly once, here, behind a shared guard.
+ */
+#ifndef XASH_MSTUDIO_TYPEDEFS_DECLARED
+#define XASH_MSTUDIO_TYPEDEFS_DECLARED
 typedef struct mstudiobone_s mstudiobone_t;
 typedef struct mstudioanim_s mstudioanim_t;
+#endif
 
 float Q_rsqrt( float number );
 uint16_t FloatToHalf( float v );
