@@ -109,14 +109,20 @@ void SDLash_Init( void )
 		SDL_LogSetAllPriority( SDL_LOG_PRIORITY_ERROR );
 
 #if XASH_WIN32
+#ifdef SDL_HINT_WINDOWS_DPI_AWARENESS
 	SDL_SetHint( SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitor" );
+#endif
 	// TODO: disabled for now
 	// try to test it better when we'll come back to highdpi support issue
 	// SDL_SetHint( SDL_HINT_WINDOWS_DPI_SCALING, "1" );
 #endif // XASH_WIN32
 
+#ifdef SDL_HINT_ANDROID_BLOCK_ON_PAUSE
 	SDL_SetHint( SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0" );
+#endif
+#ifdef SDL_HINT_ANDROID_BLOCK_ON_PAUSE_PAUSEAUDIO
 	SDL_SetHint( SDL_HINT_ANDROID_BLOCK_ON_PAUSE_PAUSEAUDIO, "0" );
+#endif
 
 	// when launched through Steam (notably on Steam Deck) Steam Input hides the
 	// real controller and exposes a virtual gamepad without gyro/touchpad access
@@ -133,15 +139,25 @@ void SDLash_Init( void )
 		host.type = HOST_DEDICATED;
 	}
 
+#ifdef SDL_HINT_ACCELEROMETER_AS_JOYSTICK
 	SDL_SetHint( SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0" );
+#endif
+#ifdef SDL_HINT_JOYSTICK_HIDAPI_STEAM
 	SDL_SetHint( SDL_HINT_JOYSTICK_HIDAPI_STEAM, "1" );
+#endif
+#ifdef SDL_HINT_ANDROID_TRAP_BACK_BUTTON
 	SDL_SetHint( SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1" );
+#endif
+#ifdef SDL_HINT_ORIENTATIONS
 	SDL_SetHint( SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight" );
+#endif
 
 #ifdef SDL_HINT_MOUSE_TOUCH_EVENTS
 	SDL_SetHint( SDL_HINT_MOUSE_TOUCH_EVENTS, "0" );
 #endif // SDL_HINT_MOUSE_TOUCH_EVENTS
+#ifdef SDL_HINT_TOUCH_MOUSE_EVENTS
 	SDL_SetHint( SDL_HINT_TOUCH_MOUSE_EVENTS, "0" );
+#endif
 
 	// NOTE: setting this hint makes no sense, as of course
 	// it doesn't make warps magically work in normal, non-relative mode

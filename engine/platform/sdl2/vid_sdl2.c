@@ -845,7 +845,9 @@ int GL_SetAttribute( int attr, int val )
 #ifdef SDL_HINT_OPENGL_ES_DRIVER
 		if( val == REF_GL_CONTEXT_PROFILE_ES )
 		{
+#ifdef SDL_HINT_OPENGL_ES_DRIVER
 			SDL_SetHint( SDL_HINT_OPENGL_ES_DRIVER, "1" );
+#endif
 			SDL_SetHint( "SDL_VIDEO_X11_FORCE_EGL", "1" );
 		}
 #endif // SDL_HINT_OPENGL_ES_DRIVER
@@ -921,7 +923,9 @@ qboolean R_Init_Video( ref_graphic_apis_t type )
 		// EGL doesn't mean we want GLES context
 		// so force it only on Windows, where GL is usually created via WGL
 #if XASH_WIN32
+#ifdef SDL_HINT_OPENGL_ES_DRIVER
 		SDL_SetHint( SDL_HINT_OPENGL_ES_DRIVER, "1" );
+#endif
 #endif // XASH_WIN32
 
 		// Every hint below is guarded on its own name. SDL declares each as a

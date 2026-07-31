@@ -363,8 +363,12 @@ Platform_JoyInit
 */
 int Platform_JoyInit( void )
 {
+#ifdef SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE
 	SDL_SetHint( SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE, "1" );
+#endif
+#ifdef SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE
 	SDL_SetHint( SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE, "1" );
+#endif
 
 	Con_Reportf( "Joystick: SDL GameController API\n" );
 	if( SDL_WasInit( SDL_INIT_GAMECONTROLLER ) != SDL_INIT_GAMECONTROLLER &&

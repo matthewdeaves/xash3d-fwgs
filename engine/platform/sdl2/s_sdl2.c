@@ -99,7 +99,9 @@ qboolean SNDDMA_Init( void )
 	if( SDL_getenv( "SDL_AUDIODRIVER" ))
 		driver = NULL; // let SDL2 and user decide
 
+#ifdef SDL_HINT_AUDIODRIVER
 	SDL_SetHint( SDL_HINT_AUDIODRIVER, driver );
+#endif
 #endif // XASH_WIN32
 
 	// even if we don't have PA
