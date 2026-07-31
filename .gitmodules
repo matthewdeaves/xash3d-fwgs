@@ -1,6 +1,7 @@
 [submodule "mainui"]
 	path = 3rdparty/mainui
-	url = https://github.com/FWGS/mainui_cpp
+	url = https://github.com/matthewdeaves/mainui_cpp.git
+	branch = oldmac
 [submodule "ref_gl/nanogl"]
 	path = 3rdparty/nanogl
 	url = https://github.com/FWGS/nanogl
@@ -36,7 +37,8 @@
 	url = https://github.com/xiph/opusfile.git
 [submodule "3rdparty/libbacktrace/libbacktrace"]
 	path = 3rdparty/libbacktrace/libbacktrace
-	url = https://github.com/ianlancetaylor/libbacktrace
+	url = https://github.com/matthewdeaves/libbacktrace.git
+	branch = oldmac
 [submodule "3rdparty/maintui"]
 	path = 3rdparty/maintui
 	url = https://github.com/FWGS/xash3d-maintui.git
