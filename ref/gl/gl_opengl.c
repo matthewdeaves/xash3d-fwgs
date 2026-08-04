@@ -939,12 +939,17 @@ static void GL_InitExtensionsBigGL( void )
 	// cvar first with a default of 0 means GL_CheckExtension's own Cvar_Get finds
 	// it already set and keeps this value. It stays FCVAR_GLCONFIG, so opengl.cfg
 	// can still turn it back on for anyone who wants it.
-	{
-		char npotdesc[MAX_VA_STRING];
-
-		Q_snprintf( npotdesc, sizeof( npotdesc ), CVAR_GLCONFIG_DESCRIPTION, "GL_ARB_texture_non_power_of_two" );
-		gEngfuncs.Cvar_Get( "gl_texture_npot", "0", FCVAR_GLCONFIG|FCVAR_READ_ONLY, npotdesc );
-	}
+	//
+	// Registered with an EMPTY description, which is load-bearing rather than
+	// laziness. Cvar_Get overwrites an existing FCVAR_GLCONFIG cvar's value with
+	// the new default UNLESS that cvar's description is empty, because an empty
+	// description is how a value set from a config file is recognised
+	// (engine/common/cvar.c, the FCVAR_GLCONFIG branch). Registering with a
+	// description here meant GL_CheckExtension's own Cvar_Get, which passes one,
+	// promptly overwrote this 0 with its default of 1 and the setting did nothing.
+	// Registering the way a config file does makes the value stick, and makes a
+	// real opengl.cfg entry take precedence over it, which is what we want.
+	gEngfuncs.Cvar_Get( "gl_texture_npot", "0", FCVAR_GLCONFIG|FCVAR_READ_ONLY, "" );
 #endif
 	GL_CheckExtension( "GL_ARB_texture_non_power_of_two", NULL, 0, "gl_texture_npot", GL_ARB_TEXTURE_NPOT_EXT, 0 );
 	GL_CheckExtension( "GL_ARB_texture_compression", texturecompressionfuncs, ARRAYSIZE( texturecompressionfuncs ), "gl_texture_dxt_compression", GL_TEXTURE_COMPRESSION_EXT, 0 );
