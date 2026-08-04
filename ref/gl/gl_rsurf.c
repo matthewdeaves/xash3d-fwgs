@@ -2100,11 +2100,59 @@ void R_DrawBrushModel( cl_entity_t *e )
 	if( gl_polyoffset_bmodels.value )
 		GL_PushPolygonOffset( -0.5f, -gl_polyoffset_bmodels.value );
 
+	// Single-pass brush models.
+	//
+	// R_DrawTextureChains combines base x lightmap in one multitexture draw for
+	// the static world, but brush entities were left on the classic two-pass
+	// path, so every door, platform, button and train still rasterized its
+	// geometry twice: once for the base texture and again in R_BlendLightmaps.
+	//
+	// On a fillrate-bound GPU that is the dominant remaining cost. A `sample`
+	// profile of the G3 (Rage 128, 800x600, c0a0) put 148 of 2792 main-thread
+	// samples in R_DrawBrushModel against 107 in R_DrawWorld, 55 of them in the
+	// R_BlendLightmaps second pass, while 83% of the frame was blocked in
+	// CGLFlushDrawable waiting on the GPU. c0a0 is a tram ride through a level
+	// built out of brush entities, which is why they outweigh the world there.
+	//
+	// Restricted to kRenderNormal on purpose. R_SinglePassBegin puts TMU0 in
+	// GL_REPLACE, which discards the primary colour, and that colour is exactly
+	// how the translucent rendermodes carry their per-entity alpha and tint. The
+	// per-surface guard in R_RenderBrushPoly already declines via R_HasLightmap
+	// for TransColor/TransAdd/Glow, but kRenderTransAlpha and kRenderTransTexture
+	// would otherwise reach a REPLACE stage and lose their blend, so gate the
+	// whole run on the one mode where the primary colour is known to be opaque
+	// white. That still covers the overwhelming majority of brush entities.
+	//
+	// Also requires the non-VBO path: R_DrawVBO does its own lightmap combining
+	// and must not run against a TMU1 stage this code set up.
+	qboolean singlepass_bmodel = !allow_vbo
+		&& e->curstate.rendermode == kRenderNormal
+		&& gl_singlepass.value && !glState.isFogEnabled
+		&& glConfig.max_texture_units >= 2
+		&& ( !gl_overbright.value || R_HasTexEnvCombine( ))
+		&& R_HasLightmap();
+
+	if( singlepass_bmodel )
+	{
+		r_singlepass_active = true;
+		R_SinglePassBegin();
+	}
+
 	// draw sorted translucent surfaces
 	for( int i = 0; i < num_sorted; i++ )
 	{
 		if( !allow_vbo || !R_AddSurfToVBO( gpGlobals->draw_surfaces[i].surf, true ))
 			R_RenderBrushPoly( gpGlobals->draw_surfaces[i].surf, gpGlobals->draw_surfaces[i].cull );
+	}
+
+	// Tear the two-stage state down before anything else draws. R_BlendLightmaps
+	// below still runs, and must: surfaces whose lightmap turned out to be
+	// dynamic were deferred to the dynamic chain by R_RenderBrushPoly exactly as
+	// they are in the world path, and they get their lightmap there.
+	if( singlepass_bmodel )
+	{
+		R_SinglePassEnd();
+		r_singlepass_active = false;
 	}
 
 	R_DrawVBO( R_HasLightmap(), true );
