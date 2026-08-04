@@ -912,6 +912,40 @@ static void GL_InitExtensionsBigGL( void )
 		GL_CheckExtension( "GL_ARB_seamless_cube_map", NULL, 0, "gl_texture_cubemap_seamless", GL_ARB_SEAMLESS_CUBEMAP, 0 );
 	}
 
+#if XASH_APPLE && ( defined( __ppc__ ) || defined( __ppc64__ ) )
+	// oldmac: default NPOT textures OFF on PowerPC Macs, because every GPU that
+	// ever shipped in one samples them in software.
+	//
+	// Measured on a dual G5 with a Radeon 9650, 1680x1050, same binary, same map,
+	// the only change being this cvar:
+	//
+	//     gl_texture_npot 1    2.022 fps
+	//     gl_texture_npot 0   56.020 fps
+	//
+	// This is not a slow path, it is a fallback to the driver's software
+	// rasteriser: 2 fps is well below the 15.6 fps our own software renderer
+	// manages at that resolution, which no hardware path would undercut.
+	//
+	// The trigger is the OS, not the card. 10.4 reports GL 1.5 and does not
+	// advertise GL_ARB_texture_non_power_of_two, so the engine rounds every
+	// texture up to a power of two and the hardware sampler handles it. 10.5
+	// reports GL 2.0, where NPOT is core, so the driver must advertise it and the
+	// engine believes it. Half the game's textures are affected: 1570 of the 3116
+	// miptex in halflife.wad are not powers of two, and world textures are
+	// GL_REPEAT with a full mip chain, which is exactly the combination an R300
+	// sampler cannot address.
+	//
+	// So the extension being present is true and useless here. Registering the
+	// cvar first with a default of 0 means GL_CheckExtension's own Cvar_Get finds
+	// it already set and keeps this value. It stays FCVAR_GLCONFIG, so opengl.cfg
+	// can still turn it back on for anyone who wants it.
+	{
+		char npotdesc[MAX_VA_STRING];
+
+		Q_snprintf( npotdesc, sizeof( npotdesc ), CVAR_GLCONFIG_DESCRIPTION, "GL_ARB_texture_non_power_of_two" );
+		gEngfuncs.Cvar_Get( "gl_texture_npot", "0", FCVAR_GLCONFIG|FCVAR_READ_ONLY, npotdesc );
+	}
+#endif
 	GL_CheckExtension( "GL_ARB_texture_non_power_of_two", NULL, 0, "gl_texture_npot", GL_ARB_TEXTURE_NPOT_EXT, 0 );
 	GL_CheckExtension( "GL_ARB_texture_compression", texturecompressionfuncs, ARRAYSIZE( texturecompressionfuncs ), "gl_texture_dxt_compression", GL_TEXTURE_COMPRESSION_EXT, 0 );
 	if( !GL_CheckExtension( "GL_EXT_texture_edge_clamp", NULL, 0, "gl_clamp_to_edge", GL_CLAMPTOEDGE_EXT, 2.0 )) // present in ES2

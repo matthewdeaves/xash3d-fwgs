@@ -1515,6 +1515,23 @@ static void R_SinglePassBegin( void )
 	GL_SelectTexture( XASH_TEXTURE0 );
 }
 
+// GL_ARB_texture_env_combine is not in the engine's extension table, so ask the
+// driver's own string once and remember the answer. Core since GL 1.3, but the
+// point of the check is the hardware that predates that.
+static qboolean R_HasTexEnvCombine( void )
+{
+	static int cached = -1;
+
+	if( cached < 0 )
+	{
+		const char *s = glConfig.extensions_string;
+
+		cached = ( s && ( Q_strstr( s, "GL_ARB_texture_env_combine" )
+			|| Q_strstr( s, "GL_EXT_texture_env_combine" ))) ? 1 : 0;
+	}
+	return cached ? true : false;
+}
+
 // restore default single-texture state after the single-pass world run
 static void R_SinglePassEnd( void )
 {
@@ -1705,7 +1722,18 @@ static void R_DrawTextureChains( void )
 
 	// single-pass world render is opaque-world only, needs 2 TMUs, and is
 	// skipped under fog (the classic fog color path handles that).
-	r_singlepass_active = gl_singlepass.value && !glState.isFogEnabled && glConfig.max_texture_units >= 2;
+	//
+	// It also needs GL_ARB_texture_env_combine when overbright is on, and that is
+	// a SEPARATE extension from multitexture. Two texture units say nothing about
+	// whether COMBINE texenv exists: a GL 1.1 part can have the first and not the
+	// second. Without this check the COMBINE calls in R_SinglePassBegin would
+	// raise GL_INVALID_ENUM, be ignored, and leave TMU1 at GL_MODULATE, which
+	// renders without the x2 overbright and so just looks wrong rather than
+	// failing. Every GPU in this project's own fleet has it, including the Rage
+	// 128, so this has never fired here; it is checked because the code issues the
+	// enum unconditionally and would be silently wrong anywhere it is absent.
+	r_singlepass_active = gl_singlepass.value && !glState.isFogEnabled && glConfig.max_texture_units >= 2
+		&& ( !gl_overbright.value || R_HasTexEnvCombine( ));
 	if( r_singlepass_active )
 		R_SinglePassBegin();
 
