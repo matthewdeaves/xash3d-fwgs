@@ -64,7 +64,7 @@ static void Sys_Crash( int signal, siginfo_t *si, void *context )
 	qboolean detailed_message = false;
 	if( have_libbacktrace && !detailed_message )
 	{
-		len = Sys_CrashDetailsLibbacktrace( logfd, crash_message, len, sizeof( crash_message ));
+		len = Sys_CrashDetailsLibbacktrace( logfd, crash_message, len, sizeof( crash_message ), context );
 		detailed_message = true;
 	}
 #endif // HAVE_LIBBACKTRACE
@@ -109,8 +109,20 @@ static void Sys_Crash( int signal, siginfo_t *si, void *context )
 #endif
 	host.status = HOST_CRASHED;
 
-	// put MessageBox as Sys_Error
-	Platform_MessageBox( "Xash Error", crash_message, false );
+	// oldmac: -nomsgbox suppresses this dialog, and only this dialog. The crash
+	// text has already gone to stderr and to the log by the time we get here, so
+	// nothing is lost by not drawing it.
+	//
+	// It exists for the bench machines. This box is modal, so a crash during an
+	// automated run leaves the engine parked on a dialog that nobody is sitting
+	// in front of, holding the machine until a person walks over and clicks it.
+	// The run's watchdog does eventually kill the process, but every crash still
+	// costs a human interruption, and a fleet of six is where that adds up.
+	//
+	// It stays on by default: for somebody actually playing the game, a dialog
+	// saying what happened is much better than the window vanishing.
+	if( !Sys_CheckParm( "-nomsgbox" ))
+		Platform_MessageBox( "Xash Error", crash_message, false );
 
 	// log saved, now we can try to save configs and close log correctly, it may crash
 	if( host.type == HOST_NORMAL )
