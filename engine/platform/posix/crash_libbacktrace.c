@@ -19,9 +19,6 @@ GNU General Public License for more details.
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <unistd.h>
-#if XASH_APPLE
-#include <sys/ucontext.h>
-#endif
 #include "common.h"
 #include "backtrace.h"
 #include "input.h"
@@ -201,6 +198,12 @@ static int Sys_BacktraceFrame( void *data, uintptr_t pc )
 }
 
 #if XASH_APPLE && defined( __ppc__ )
+// The include lives HERE, not at the top of the file: XASH_APPLE comes from
+// build.h by way of common.h, so a guard placed above that include is always
+// false and this header silently never arrives. That produced "nested functions
+// are disabled" from gcc-4.0, which is what it says when a type is unknown.
+#include <sys/ucontext.h>
+
 // oldmac: unwind PowerPC from the signal context instead of from here.
 //
 // Every trace this handler produced on a PowerPC machine was three frames long:
