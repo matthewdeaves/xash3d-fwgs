@@ -16,6 +16,6 @@ GNU General Public License for more details.
 //
 // crash_libbacktrace.c
 //
-int Sys_CrashDetailsLibbacktrace( int logfd, char *message, int len, size_t max_len );
+int Sys_CrashDetailsLibbacktrace( int logfd, char *message, int len, size_t max_len, void *context );
 qboolean Sys_SetupLibbacktrace( const char *argv0 );
 

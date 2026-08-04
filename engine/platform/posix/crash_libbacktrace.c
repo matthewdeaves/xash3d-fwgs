@@ -17,6 +17,11 @@ GNU General Public License for more details.
 #if HAVE_LIBBACKTRACE
 #include <signal.h>
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <unistd.h>
+#if XASH_APPLE
+#include <sys/ucontext.h>
+#endif
 #include "common.h"
 #include "backtrace.h"
 #include "input.h"
@@ -195,7 +200,118 @@ static int Sys_BacktraceFrame( void *data, uintptr_t pc )
 	return 0;
 }
 
-int Sys_CrashDetailsLibbacktrace( int logfd, char *message, int len, size_t max_len )
+#if XASH_APPLE && defined( __ppc__ )
+// oldmac: unwind PowerPC from the signal context instead of from here.
+//
+// Every trace this handler produced on a PowerPC machine was three frames long:
+// two inside the handler, then libSystem's _sigtramp, then nothing. That is not
+// a symbolisation failure, it is the unwinder stopping dead at the signal
+// trampoline. _sigtramp is the frame the kernel synthesises to re-enter user
+// code, it is written in assembler and carries no unwind information, so a
+// walker that has arrived at it has no way to describe the frame below and
+// gives up. Everything interesting is below it: the whole faulting call chain.
+//
+// The kernel already hands us the answer. The third argument to a SA_SIGINFO
+// handler is the ucontext, and its machine state holds the register file as it
+// was at the instant of the fault: srr0 is the instruction that faulted, lr is
+// where it would have returned to, and r1 is the stack pointer. Seeding the walk
+// from those three skips the trampoline entirely.
+//
+// The walk itself is the PowerPC ABI's back chain, which needs no unwind tables
+// at all. Word 0 of a frame is the caller's frame pointer and word 2 (offset 8)
+// of THAT frame is the return address the callee saved into it. So the chain is
+// just repeated pointer-chasing, and it works on a fully stripped binary.
+//
+// This is deliberately not used on x86_64: there is no back chain to rely on
+// there, frame pointers are routinely omitted, and libbacktrace's own unwinder
+// already produces correct traces on that slice.
+#define OLDMAC_PPC_UNWIND 1
+
+// Darwin renamed every field of the machine state when it adopted the UNIX 03
+// namespace rules, so the 10.3 and 10.4 SDKs spell these srr0/r1/lr and later
+// ones spell them __srr0/__r1/__lr. Both are built here.
+#if defined( __DARWIN_UNIX03 ) && __DARWIN_UNIX03
+#define PPCSS( uc )    ((uc)->uc_mcontext->__ss)
+#define PPC_SRR0( ss ) ((ss).__srr0)
+#define PPC_LR( ss )   ((ss).__lr)
+#define PPC_R1( ss )   ((ss).__r1)
+#else
+#define PPCSS( uc )    ((uc)->uc_mcontext->ss)
+#define PPC_SRR0( ss ) ((ss).srr0)
+#define PPC_LR( ss )   ((ss).lr)
+#define PPC_R1( ss )   ((ss).r1)
+#endif
+
+static int g_devnull = -1;
+
+// Probe a read WITHOUT risking a second fault inside the handler.
+//
+// The stack we are about to walk is by definition suspect: we are here because
+// the program corrupted something. Dereferencing a bad back chain would raise
+// SIGSEGV from inside the SIGSEGV handler, which on this platform means an
+// immediate silent kill and no trace at all, the exact outcome this code exists
+// to prevent. write() reports unreadable memory as EFAULT rather than signalling,
+// so it is a safe probe, and it is async-signal-safe. /dev/null is opened once at
+// startup because open() in a crash handler is a good way to hang.
+static qboolean Sys_PPCReadable( const void *p, size_t n )
+{
+	if( g_devnull < 0 )
+		return false;
+	return write( g_devnull, p, n ) == (ssize_t)n;
+}
+
+static void Sys_PPCBacktrace( struct print_data *pd, void *context )
+{
+	const ucontext_t *uc = (const ucontext_t *)context;
+	uint32_t sp, prev_sp;
+	int depth;
+
+	if( !uc || !uc->uc_mcontext )
+		return;
+
+	// The two the context gives directly. srr0 is the faulting instruction
+	// itself, which no stack walk can recover, and it is usually the whole
+	// answer on its own.
+	Sys_BacktracePrintSyminfo( pd, (uintptr_t)PPC_SRR0( PPCSS( uc )), NULL, 0, 0 );
+
+	if( PPC_LR( PPCSS( uc )) != PPC_SRR0( PPCSS( uc )))
+		Sys_BacktracePrintSyminfo( pd, (uintptr_t)PPC_LR( PPCSS( uc )), NULL, 0, 0 );
+
+	sp = (uint32_t)PPC_R1( PPCSS( uc ));
+	prev_sp = 0;
+
+	// 128 is a limit on damage, not on depth: a corrupted chain that happens to
+	// point at readable memory could otherwise loop until the alarm fires.
+	for( depth = 0; depth < 128; depth++ )
+	{
+		uint32_t next, ra;
+
+		// The stack grows down and every frame is 16-byte aligned on this ABI,
+		// so a back chain that goes backwards or lands off alignment is
+		// corrupt, and following it would print fiction.
+		if( sp == 0 || ( sp & 15 ) || sp <= prev_sp )
+			break;
+
+		if( !Sys_PPCReadable((const void *)(uintptr_t)sp, sizeof( uint32_t )))
+			break;
+
+		next = *(const uint32_t *)(uintptr_t)sp;
+
+		if( next == 0 || !Sys_PPCReadable((const void *)(uintptr_t)( next + 8 ), sizeof( uint32_t )))
+			break;
+
+		ra = *(const uint32_t *)(uintptr_t)( next + 8 );
+
+		if( ra != 0 )
+			Sys_BacktracePrintSyminfo( pd, (uintptr_t)ra, NULL, 0, 0 );
+
+		prev_sp = sp;
+		sp = next;
+	}
+}
+#endif // XASH_APPLE && __ppc__
+
+int Sys_CrashDetailsLibbacktrace( int logfd, char *message, int len, size_t max_len, void *context )
 {
 	struct print_data pd =
 	{
@@ -216,6 +332,14 @@ int Sys_CrashDetailsLibbacktrace( int logfd, char *message, int len, size_t max_
 	// itself is async-signal-safe.
 	alarm( 5 );
 
+#ifdef OLDMAC_PPC_UNWIND
+	// Prefer the context walk where we have one. Fall back to libbacktrace only
+	// if there is no context, which happens when this is called from somewhere
+	// other than a signal handler.
+	if( context )
+		Sys_PPCBacktrace( &pd, context );
+	else
+#endif
 	backtrace_simple( g_bt_state, 0, Sys_BacktraceFrame,
 		Sys_BacktracePrintError, &pd );
 
@@ -234,6 +358,13 @@ static void Sys_BacktraceErrorQuiet( void *data, const char *msg, int errnum )
 
 qboolean Sys_SetupLibbacktrace( const char *argv0 )
 {
+#ifdef OLDMAC_PPC_UNWIND
+	// Opened here, never in the handler: open() can block and can allocate, and
+	// a crash handler that hangs tells you less than one that says nothing.
+	if( g_devnull < 0 )
+		g_devnull = open( "/dev/null", O_WRONLY );
+#endif
+
 	enable_libbacktrace = true;
 	g_bt_state = backtrace_create_state( argv0, true, Sys_BacktraceErrorQuiet, NULL );
 
