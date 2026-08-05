@@ -1635,16 +1635,12 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 			pglDisable( GL_TEXTURE_2D );
 			GL_SelectTexture( XASH_TEXTURE0 );
 
-			// Rebind the BASE texture, for the same reason the static branch
-			// below does it: R_CheckLightMap above may have bound TMU0 to the
-			// lightmap texture in order to TexSubImage an animated lightstyle,
-			// and this is the animated-lightstyle path, so that is not a rare
-			// case here, it is the common one. Without this, DrawGLPoly draws
-			// the surface using the lightmap as its base texture. Only the
-			// static branch had the rebind, which left the two halves of the
-			// same guard inconsistent.
-			GL_Bind( XASH_TEXTURE0, t->gl_texturenum );
-
+			// No base rebind here, deliberately. R_CheckLightMap only binds TMU0
+			// to the lightmap on the branch that TexSubImages an animated
+			// lightstyle, and that branch returns FALSE, so it lands in the
+			// static case below where the rebind already is. Every path that
+			// returns TRUE, and therefore reaches here, does so before touching
+			// any texture unit, so TMU0 still holds the base texture bound above.
 			fa->info->lightmapchain = gl_lms.dynamic_surfaces;
 			gl_lms.dynamic_surfaces = fa;
 			DrawGLPoly( fa->polys, 0.0f, 0.0f );
