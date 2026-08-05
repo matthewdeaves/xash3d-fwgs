@@ -1635,6 +1635,16 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 			pglDisable( GL_TEXTURE_2D );
 			GL_SelectTexture( XASH_TEXTURE0 );
 
+			// Rebind the BASE texture, for the same reason the static branch
+			// below does it: R_CheckLightMap above may have bound TMU0 to the
+			// lightmap texture in order to TexSubImage an animated lightstyle,
+			// and this is the animated-lightstyle path, so that is not a rare
+			// case here, it is the common one. Without this, DrawGLPoly draws
+			// the surface using the lightmap as its base texture. Only the
+			// static branch had the rebind, which left the two halves of the
+			// same guard inconsistent.
+			GL_Bind( XASH_TEXTURE0, t->gl_texturenum );
+
 			fa->info->lightmapchain = gl_lms.dynamic_surfaces;
 			gl_lms.dynamic_surfaces = fa;
 			DrawGLPoly( fa->polys, 0.0f, 0.0f );
@@ -2125,9 +2135,14 @@ void R_DrawBrushModel( cl_entity_t *e )
 	//
 	// Also requires the non-VBO path: R_DrawVBO does its own lightmap combining
 	// and must not run against a TMU1 stage this code set up.
+	// gl_singlepass_bmodels exists so this can be turned off on its own, without
+	// also turning off the static-world single-pass that gl_singlepass controls.
+	// Those are two different code paths reaching two different sets of surfaces,
+	// and collapsing them onto one cvar made it impossible to tell, on hardware,
+	// which of the two was responsible for a rendering fault.
 	qboolean singlepass_bmodel = !allow_vbo
 		&& e->curstate.rendermode == kRenderNormal
-		&& gl_singlepass.value && !glState.isFogEnabled
+		&& gl_singlepass.value && gl_singlepass_bmodels.value && !glState.isFogEnabled
 		&& glConfig.max_texture_units >= 2
 		&& ( !gl_overbright.value || R_HasTexEnvCombine( ))
 		&& R_HasLightmap();
