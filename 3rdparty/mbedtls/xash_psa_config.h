@@ -13,17 +13,39 @@
 #define MBEDTLS_PLATFORM_MS_TIME_ALT
 #endif
 
-/* oldmac-mbedtls-ms-time (task#6): macOS before 10.12 has no clock_gettime();
-   route mbedtls_ms_time() through the engine's Platform_DoubleTime() (see
-   3rdparty/mbedtls/compat.c) so the clock_gettime path in
-   tf-psa-crypto/platform/platform_util.c is compiled out. Version-scoped so a
-   modern-macOS build keeps clock_gettime and is unaffected. */
+/* oldmac-mbedtls-ms-time (task#6): route mbedtls_ms_time() through the engine's
+   own Platform_DoubleTime() on Apple, unconditionally.
+
+   This was version-scoped to "macOS before 10.12", on the reasoning that older
+   systems have no clock_gettime() while a modern build should keep it. That
+   reasoning was wrong, and the scoping only ever worked by accident.
+
+   In THIS configuration mbedTLS never provides mbedtls_ms_time() on any
+   platform. Its implementation in tf-psa-crypto/platform/platform_util.c sits
+   behind
+
+       #if defined(MBEDTLS_HAVE_TIME) && !defined(MBEDTLS_PLATFORM_MS_TIME_ALT)
+
+   and MBEDTLS_HAVE_TIME is not defined anywhere in the config we build with.
+   So the only thing that has ever supplied the symbol is compat.c, reached via
+   MBEDTLS_PLATFORM_MS_TIME_ALT.
+
+   Every slice built until now targets an OS older than 10.12, so the ALT branch
+   was always taken and the gap never showed. The arm64 slice is the first build
+   with a version-min above 10.12: the macro was correctly NOT defined, compat.c
+   compiled itself out, mbedTLS still did not provide the function, and libxash
+   failed to link with
+
+       Undefined symbols for architecture arm64: "_mbedtls_ms_time",
+         referenced from: _psa_random_internal_generate
+
+   Verified by nm: platform_util.c.o contains no _mbedtls_ms_time at all.
+
+   Platform_DoubleTime() is the clock the rest of the engine already uses, so
+   taking it on every Apple target is both simpler and more consistent than a
+   version test that silently depended on always being true. */
 #if defined( __APPLE__ )
-#include <AvailabilityMacros.h>
-#if !defined( MAC_OS_X_VERSION_10_12 ) || \
-    ( defined( MAC_OS_X_VERSION_MIN_REQUIRED ) && MAC_OS_X_VERSION_MIN_REQUIRED < 101200 )
 #define MBEDTLS_PLATFORM_MS_TIME_ALT
-#endif
 #endif
 
 #undef MBEDTLS_FS_IO
