@@ -92,4 +92,39 @@
 #undef MBEDTLS_PK_PARSE_EC_EXTENDED
 #undef MBEDTLS_ASN1_WRITE_C
 
+/* AES-NI cannot be built for 32-bit x86 with a 2013-era clang, and would be
+ * dead code there anyway.
+ *
+ * MBEDTLS_AESNI_C is defined by tf-psa-crypto/include/psa/crypto_config.h, so it
+ * has to be switched off HERE and not in xash_mbedtls_config.h: aesni.c lives
+ * under tf-psa-crypto, and that tree reads TF_PSA_CRYPTO_USER_CONFIG_FILE, which
+ * is this file.
+ *
+ * aesni.h decides how to implement AES-NI like this:
+ *
+ *     For 32-bit, we only support intrinsics
+ *     #if defined(MBEDTLS_ARCH_IS_X86) && (defined(__GNUC__) || defined(__clang__))
+ *     #define MBEDTLS_AESNI_HAVE_INTRINSICS
+ *     #endif
+ *
+ * On 32-bit that branch asks neither for __AES__ / __PCLMUL__ nor for a compiler
+ * version, unlike the 64-bit path just above it. Apple clang 4.2 (LLVM 3.2) is
+ * old enough that its 32-bit x86 AES-NI intrinsics do not work: __m128i comes
+ * back as an incompatible type and the build dies with 20 errors in aesni.c.
+ * The assembly fallback is guarded on MBEDTLS_ARCH_IS_X64, so there is nothing
+ * to fall back to and aesni.h raises
+ *     #error "MBEDTLS_AESNI_C defined, but neither intrinsics nor assembly available"
+ * which is why MBEDTLS_AESNI_C itself has to go rather than just the intrinsics.
+ *
+ * Nothing is lost. The i386 slice exists for the 2006 Core Solo and Core Duo
+ * Macs, the only Intel Macs with no 64-bit mode. AES-NI arrived with Westmere in
+ * 2010, so no CPU that can ever run this slice has the instructions. mbedTLS
+ * falls back to its portable C AES, and HTTPS keeps working.
+ *
+ * x86_64 is untouched and keeps AES-NI.
+ */
+#if defined(__i386__)
+#undef MBEDTLS_AESNI_C
+#endif
+
 #endif /* XASH_PSA_CONFIG_H */
