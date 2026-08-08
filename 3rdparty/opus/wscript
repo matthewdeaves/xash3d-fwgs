@@ -80,7 +80,18 @@ def configure(conf):
 
 		# on x86_64 we enable both SSE and SSE2, so RTCD can be disabled (it's actually doesn't even build with RTCD enabled)
 		if conf.env.DEST_SIZEOF_VOID_P == 4:
-			if conf.check(header_name='cpuid.h', mandatory=False):
+			# Check for the FUNCTION, not just the header. opus's x86cpu.c calls
+			# __get_cpuid_count() under CPU_INFO_BY_C, and cpuid.h being present
+			# does not mean it declares that: Apple clang 4.2 (LLVM 3.2) ships a
+			# cpuid.h with __get_cpuid but no __get_cpuid_count. The header check
+			# therefore passed, CPU_INFO_BY_C was defined, and the i386 link died
+			# with
+			#   Undefined symbols for architecture i386: "___get_cpuid_count"
+			# after every object had compiled. Falling back to CPU_INFO_BY_ASM
+			# uses opus's own inline cpuid and needs nothing from the header.
+			if conf.check_cc(fragment='''#include <cpuid.h>
+int main(void) { unsigned int a, b, c, d; __get_cpuid_count(7, 0, &a, &b, &c, &d); return 0; }''',
+					msg='Checking for __get_cpuid_count', mandatory=False):
 				conf.define('CPU_INFO_BY_C', 1)
 			else:
 				conf.define('CPU_INFO_BY_ASM', 1)
