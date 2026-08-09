@@ -1488,6 +1488,13 @@ a static lightmap; dynamic-lightmap surfaces still defer to R_BlendLightmaps.
 */
 static qboolean r_singlepass_active = false;
 
+// Did the single-pass run actually draw the world this frame? r_singlepass_active
+// is cleared the moment the run ends, and R_RenderDetails is called later, from
+// R_DrawWorld, where it has to know how many passes the world took to pick its
+// own fog compensation. That is the same question R_HasEnabledVBO answers for the
+// VBO path at the two call sites.
+static qboolean r_singlepass_world_ran = false;
+
 // set up the two texture stages for a run of single-pass world surfaces
 static void R_SinglePassBegin( void )
 {
@@ -1530,6 +1537,91 @@ static qboolean R_HasTexEnvCombine( void )
 			|| Q_strstr( s, "GL_EXT_texture_env_combine" ))) ? 1 : 0;
 	}
 	return cached ? true : false;
+}
+
+/*
+Is the single-pass world render available at all right now?
+
+oldmac: this used to include !glState.isFogEnabled, which had it exactly
+backwards. GL_SetupFogColorForSurfacesEx exists because fog is applied once per
+pass and the passes composite by multiplication, so an N-pass world needs each
+pass to carry the Nth root of the real fog colour. Its first branch, passes < 2,
+sets the true colour and returns: ONE pass is the case that needs no correction
+at all, and it was the one case the code refused to enter.
+
+What kept the two consistent was ordering, not intent. R_DrawTextureChains picks
+the fog colour for a two-pass world at the top, 38 lines before anything decides
+how many passes the world will take, so !glState.isFogEnabled was there to stop
+those two disagreeing. Removing that guard on its own would have been worse than
+the bug it fixes: fog would stay pre-compensated for a second pass that no longer
+happens, and the world would come out visibly under-fogged rather than merely
+slow.
+
+So the top of R_DrawTextureChains still chooses the two-pass colour, exactly as
+before, and the single-pass run takes it back off at the point where it commits.
+Everything in between - the sky, the clouds, R_DrawVBO - is genuinely multi-pass
+and wants the colour it already has.
+
+Detail textures are counted, not excluded. An earlier version of this bailed out
+when fog and detail textures were both on, on the theory that a third
+multiply-blended pass was not worth untangling and that r_detailtextures was off
+in practice. It is not: r_detailtextures defaults to "1" (gl_opengl.c), so that
+exclusion turned single-pass off under fog for every default install, which is
+every case this change exists for. It was tested on hardware and did nothing
+whatsoever, which is what a no-op dressed as a fix looks like.
+*/
+static qboolean R_SinglePassEligible( void )
+{
+	if( !gl_singlepass.value || glConfig.max_texture_units < 2 )
+		return false;
+
+	// GL_ARB_texture_env_combine is a SEPARATE extension from multitexture, and
+	// the COMBINE calls in R_SinglePassBegin would raise GL_INVALID_ENUM without
+	// it, be ignored, and leave TMU1 at GL_MODULATE: no x2 overbright, so it
+	// looks wrong rather than failing. Every GPU in this fleet has it, including
+	// the Rage 128, so this has never fired here.
+	if( gl_overbright.value && !R_HasTexEnvCombine( ))
+		return false;
+
+	return true;
+}
+
+/*
+How many passes does a world surface actually take, for fog's purposes?
+
+Only ever asked under fog, and that makes it simpler than it looks, because
+R_RenderDetailsForSurface chains EVERY surface when fog is on, substituting a
+grey stub for anything with no detail texture of its own. So under fog the detail
+pass is uniform: either every surface gets one or none does.
+
+  world   1 if the single-pass run drew it whole, 2 if it was drawn as base now
+          and lightmap later in R_BlendLightmaps
+  detail  +1 when r_detailtextures is on
+
+R_RenderDetails is then told the same total, which is what the VBO path already
+does: it passes 2 rather than 3 because its world is likewise one combined pass
+plus detail, and compensates with a half density.
+*/
+static int R_FogPassesForWorld( int world_passes )
+{
+	return world_passes + ( r_detailtextures.value ? 1 : 0 );
+}
+
+/*
+A surface that drops out of the single-pass run gets drawn twice: its base here,
+and its lightmap later in R_BlendLightmaps. Under fog its base pass therefore
+needs the two-pass fog colour, not the one-pass colour the rest of the run is
+using. Fog colour is plain GL state and costs nothing to change, so the exception
+paths switch to it and back around their own draw.
+
+Called with 2 before such a base draw and 1 after. A no-op when there is no fog,
+and a no-op when single-pass is not running, because then the colour standing in
+GL is already the two-pass one.
+*/
+static void R_SinglePassFogPasses( int world_passes )
+{
+	if( r_singlepass_active && glState.isFogEnabled )
+		GL_SetupFogColorForSurfacesEx( R_FogPassesForWorld( world_passes ), 1.0f, false );
 }
 
 // restore default single-texture state after the single-pass world run
@@ -1600,6 +1692,23 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 		if( Mod_HaveLightmappedWater( ))
 			R_RenderLightmapForSurface( fa );
 
+		// EmitWaterPolys sets the fog colour twice on its own: the true colour on
+		// the way in, because water is drawn in one pass, and the MULTI-pass
+		// colour on the way out, to restore what the classic world draw wants.
+		// That second one is wrong for us, and it is not ours to change: it is
+		// correct for every caller that is not in a single-pass run. So put the
+		// one-pass colour back here, unconditionally.
+		//
+		// Unconditionally is the point. This was first written inside the
+		// Mod_HaveLightmappedWater branch, which is false on every stock Half-Life
+		// map (FWORLD_HAS_LITWATER is only set for a BSP shipping water
+		// lightmaps, and gl_litwater_force defaults off), so the restore never
+		// ran: one water surface left the two-pass colour standing for every
+		// single-pass surface after it, in that chain and every chain following.
+		// Distant geometry washed toward the fog colour, in fogged and underwater
+		// scenes, which is the exact case this whole change exists to speed up.
+		R_SinglePassFogPasses( 1 );
+
 		// re-arm for the static single-pass surfaces that follow in this chain
 		if( r_singlepass_active )
 		{
@@ -1635,6 +1744,10 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 			pglDisable( GL_TEXTURE_2D );
 			GL_SelectTexture( XASH_TEXTURE0 );
 
+			// this surface is leaving the one-pass run: base now, lightmap later
+			// in R_BlendLightmaps, so its base draw takes the two-pass fog colour
+			R_SinglePassFogPasses( 2 );
+
 			// No base rebind here, deliberately. R_CheckLightMap only binds TMU0
 			// to the lightmap on the branch that TexSubImages an animated
 			// lightstyle, and that branch returns FALSE, so it lands in the
@@ -1646,10 +1759,12 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 			DrawGLPoly( fa->polys, 0.0f, 0.0f );
 
 			// re-arm TMU1 for the following static single-pass surfaces (and to
-			// keep decal state identical to the static branch below).
+			// keep decal state identical to the static branch below), and put the
+			// one-pass fog colour back for them.
 			GL_SelectTexture( XASH_TEXTURE1 );
 			pglEnable( GL_TEXTURE_2D );
 			GL_SelectTexture( XASH_TEXTURE0 );
+			R_SinglePassFogPasses( 1 );
 		}
 		else
 		{
@@ -1677,6 +1792,21 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 		GL_SelectTexture( XASH_TEXTURE0 );
 	}
 
+	// R_RenderLightmapForSurface only chains the surface, so whether this is one
+	// pass or two is decided by whether R_BlendLightmaps will draw it at all.
+	// These are exactly its own conditions to bail out, plus R_BlendLightmaps's:
+	// a tiled surface gets no second pass and so must keep the one-pass colour.
+	//
+	// Held in a local rather than tested twice, so the restore fires only where
+	// something was actually changed. Otherwise every tiled surface, every
+	// conveyor, and every surface on an r_fullbright or lightdata-less map pays
+	// a redundant pglFogfv, and this runs per surface on the hardware the whole
+	// change is trying to win frames on.
+	qboolean tail_two_pass = fa->polys && !FBitSet( fa->flags, SURF_DRAWTILED ) && R_HasLightmap( );
+
+	if( tail_two_pass )
+		R_SinglePassFogPasses( 2 );
+
 	DrawGLPoly( fa->polys, 0.0f, 0.0f );
 	R_RenderDecalsForSurface( fa, cull_type );
 	R_RenderLightmapForSurface( fa );
@@ -1687,6 +1817,9 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 		pglEnable( GL_TEXTURE_2D );
 		GL_SelectTexture( XASH_TEXTURE0 );
 	}
+
+	if( tail_two_pass )
+		R_SinglePassFogPasses( 1 );
 }
 
 /*
@@ -1726,22 +1859,25 @@ static void R_DrawTextureChains( void )
 
 	R_DrawVBO( !r_fullbright->value && !!WORLDMODEL->lightdata, true );
 
-	// single-pass world render is opaque-world only, needs 2 TMUs, and is
-	// skipped under fog (the classic fog color path handles that).
-	//
-	// It also needs GL_ARB_texture_env_combine when overbright is on, and that is
-	// a SEPARATE extension from multitexture. Two texture units say nothing about
-	// whether COMBINE texenv exists: a GL 1.1 part can have the first and not the
-	// second. Without this check the COMBINE calls in R_SinglePassBegin would
-	// raise GL_INVALID_ENUM, be ignored, and leave TMU1 at GL_MODULATE, which
-	// renders without the x2 overbright and so just looks wrong rather than
-	// failing. Every GPU in this project's own fleet has it, including the Rage
-	// 128, so this has never fired here; it is checked because the code issues the
-	// enum unconditionally and would be silently wrong anywhere it is absent.
-	r_singlepass_active = gl_singlepass.value && !glState.isFogEnabled && glConfig.max_texture_units >= 2
-		&& ( !gl_overbright.value || R_HasTexEnvCombine( ));
+	// single-pass world render is opaque-world only and needs 2 TMUs; the rest of
+	// the conditions, including what fog does to it, are in R_SinglePassEligible.
+	r_singlepass_active = R_SinglePassEligible();
+	r_singlepass_world_ran = r_singlepass_active;
 	if( r_singlepass_active )
+	{
 		R_SinglePassBegin();
+
+		// The world is one pass now, so take the multi-pass colour chosen at the
+		// top of this function back off again. R_SinglePassFogPasses adds the
+		// detail pass back on if there is one.
+		//
+		// HERE, and not up there beside that call, deliberately. Everything
+		// between the two is a genuine multi-pass draw that wants the colour it
+		// already has: R_DrawClouds is two blended layers per quad on a skysphere
+		// map, and it runs before this point. Choosing the one-pass colour early
+		// enough to cover the eligibility test would have under-fogged the clouds.
+		R_SinglePassFogPasses( 1 );
+	}
 
 	for( int i = 0; i < WORLDMODEL->numtextures; i++ )
 	{
@@ -2138,15 +2274,16 @@ void R_DrawBrushModel( cl_entity_t *e )
 	// which of the two was responsible for a rendering fault.
 	qboolean singlepass_bmodel = !allow_vbo
 		&& e->curstate.rendermode == kRenderNormal
-		&& gl_singlepass.value && gl_singlepass_bmodels.value && !glState.isFogEnabled
-		&& glConfig.max_texture_units >= 2
-		&& ( !gl_overbright.value || R_HasTexEnvCombine( ))
+		&& gl_singlepass_bmodels.value && R_SinglePassEligible()
 		&& R_HasLightmap();
 
 	if( singlepass_bmodel )
 	{
 		r_singlepass_active = true;
 		R_SinglePassBegin();
+
+		// the fog colour set above was chosen for two passes; this run is one
+		R_SinglePassFogPasses( 1 );
 	}
 
 	// draw sorted translucent surfaces
@@ -2176,7 +2313,7 @@ void R_DrawBrushModel( cl_entity_t *e )
 	GL_ResetFogColor();
 	R_BlendLightmaps();
 	R_RenderFullbrights( allow_vbo );
-	R_RenderDetails( allow_vbo ? 2 : 3 );
+	R_RenderDetails(( allow_vbo || singlepass_bmodel ) ? 2 : 3 );
 
 	if( gl_polyoffset_bmodels.value )
 		GL_PopPolygonOffset();
@@ -3971,7 +4108,7 @@ void R_DrawWorld( void )
 		GL_ResetFogColor();
 		R_BlendLightmaps();
 		R_RenderFullbrights( R_HasEnabledVBO( ));
-		R_RenderDetails( R_HasEnabledVBO() ? 2 : 3 );
+		R_RenderDetails(( R_HasEnabledVBO() || r_singlepass_world_ran ) ? 2 : 3 );
 		R_DrawTriangleOutlines();
 
 		if( skychain )
