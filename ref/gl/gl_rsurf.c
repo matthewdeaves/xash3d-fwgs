@@ -2096,7 +2096,9 @@ void R_DrawBrushModel( cl_entity_t *e )
 	e->visframe = tr.realframecount; // visible
 
 	// calculate dynamic lighting for bmodel
-	R_PushDlightsForBmodel( clmodel, tr.dlightframecount, RI.objectMatrix );
+	// oldmac: skipped when r_dynamic is off, same as the world marking pass
+	if( r_dynamic->value )
+		R_PushDlightsForBmodel( clmodel, tr.dlightframecount, RI.objectMatrix );
 
 	// setup the rendermode
 	R_SetRenderMode( e );

@@ -18,7 +18,12 @@ GNU General Public License for more details.
 #include "enginefeatures.h"
 #include "pm_local.h"
 
-CVAR_DEFINE_AUTO( r_dlight_virtual_radius, "3", FCVAR_GLCONFIG, "increase dlight radius virtually by this amount" );
+// oldmac: default was "3". The node descent in R_MarkLights uses the virtual
+// radius while the surface accept test uses the true radius, so 3 walks about
+// 27x the BSP volume per dlight per frame and the extra nodes contribute no
+// surfaces. Measurable CPU on a G4, repeated per brush entity by
+// R_PushDlightsForBmodel.
+CVAR_DEFINE_AUTO( r_dlight_virtual_radius, "1", FCVAR_GLCONFIG, "increase dlight radius virtually by this amount" );
 CVAR_DEFINE_AUTO( r_lighting_extended, "1", FCVAR_GLCONFIG, "allow to get lighting from world and bmodels" );
 
 /*

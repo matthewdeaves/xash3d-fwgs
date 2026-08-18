@@ -954,7 +954,13 @@ void R_RenderScene( void )
 	// begin a new frame
 	tr.framecount++;
 
-	tr.dlightframecount = R_PushDlights( WORLDMODEL, tr.framecount );
+	// oldmac: marking walks the BSP once per live dlight; with r_dynamic off the
+	// results are never read, so do not pay for them (R_PushDlights returns
+	// framecount unchanged either way)
+	if( r_dynamic->value )
+		tr.dlightframecount = R_PushDlights( WORLDMODEL, tr.framecount );
+	else
+		tr.dlightframecount = tr.framecount;
 
 	R_SetupFrustum();
 	R_SetupFrame();
