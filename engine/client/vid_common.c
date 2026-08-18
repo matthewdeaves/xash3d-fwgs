@@ -19,6 +19,9 @@ GNU General Public License for more details.
 #include "input.h"
 #include "vid_common.h"
 #include "platform/platform.h"
+#if XASH_APPLE
+#include <sys/sysctl.h> // oldmac: hw.cpusubtype for the G3 vid_16bit default
+#endif
 
 static CVAR_DEFINE_AUTO( vid_mode, "0", FCVAR_RENDERINFO, "current video mode index (used only for storage)" );
 static CVAR_DEFINE_AUTO( vid_rotate, "0", FCVAR_RENDERINFO|FCVAR_VIDRESTART, "screen rotation (0-3)" );
@@ -201,11 +204,33 @@ static void VID_Mode_f( void )
 	R_ChangeDisplaySettings( w, h, bound( 0, vid_fullscreen.value, WINDOW_MODE_COUNT - 1 ));
 }
 
+// oldmac: default vid_16bit to 1 on a G3 only. The Rage 128 gains 23% from a
+// 16-bit display mode and dithers it; every other machine keeps 32-bit. The
+// cvar is FCVAR_ARCHIVE, so the video menu toggle sticks: a player's choice,
+// once made, beats this default on every later launch.
+static const char *VID_Default16Bit( void )
+{
+#if XASH_APPLE && defined( __ppc__ ) && !defined( __ppc64__ )
+	int subtype = 0;
+	size_t len = sizeof( subtype );
+
+	// CPU_SUBTYPE_POWERPC_750 == 9; hw.cpusubtype exists on 10.3 through 10.5
+	if( sysctlbyname( "hw.cpusubtype", &subtype, &len, NULL, 0 ) == 0 && subtype == 9 )
+		return "1";
+#endif
+	return "0";
+}
+
 void VID_Init( void )
 {
 	// system screen width and height (don't suppose for change from console at all)
 	Cvar_RegisterVariable( &window_width );
 	Cvar_RegisterVariable( &window_height );
+
+	// oldmac: the video menu's 16-bit color toggle. Read where the fullscreen
+	// display mode is chosen (vid_sdl2.c); -bpp 16 / -bpp 32 on the command
+	// line force it either way for bench A/Bs.
+	Cvar_Get( "vid_16bit", VID_Default16Bit( ), FCVAR_ARCHIVE, "prefer a 16-bit display mode in exclusive fullscreen (faster on old GPUs, dithered color)" );
 
 	Cvar_RegisterVariable( &vid_mode );
 	Cvar_RegisterVariable( &vid_rotate );

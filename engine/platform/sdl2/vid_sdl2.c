@@ -580,14 +580,23 @@ static rserr_t VID_SetScreenResolution( int width, int height, window_mode_t win
 		SDL_DisplayMode got;
 		int bpp = 0;
 
-		// oldmac: -bpp 16 asks for a 16-bit exclusive fullscreen mode. On macOS
-		// SDL's Cocoa backend ignores the GL color size attributes and derives
-		// the framebuffer color depth from the current display mode, so a mode
-		// switch is the only way to a 16-bit framebuffer there. desktopBitsPixel
-		// then reads 16 as well, which flips texture uploads to the 16-bit
-		// internal formats. If no such mode exists the closest-mode search falls
-		// back silently; the printout below says which depth was actually got.
-		if( Sys_GetIntFromCmdLine( "-bpp", &bpp ) && bpp == 16 )
+		// oldmac: a 16-bit exclusive fullscreen mode. On macOS SDL's Cocoa
+		// backend ignores the GL color size attributes and derives the
+		// framebuffer color depth from the current display mode, so a mode
+		// switch is the only way to a 16-bit framebuffer there.
+		// desktopBitsPixel then reads 16 as well, which flips texture uploads
+		// to the 16-bit internal formats. The video menu's vid_16bit toggle
+		// selects it (default 1 on a G3, 0 everywhere else, archived so the
+		// player's choice sticks); -bpp 16 / -bpp 32 on the command line force
+		// it either way for bench A/Bs. If no such mode exists the
+		// closest-mode search falls back silently; the printout below says
+		// which depth was actually got.
+		if( Sys_GetIntFromCmdLine( "-bpp", &bpp ) && ( bpp == 16 || bpp == 32 ))
+		{
+			if( bpp == 16 )
+				want.format = SDL_PIXELFORMAT_ARGB1555;
+		}
+		else if( Cvar_VariableValue( "vid_16bit" ) != 0.0f )
 			want.format = SDL_PIXELFORMAT_ARGB1555;
 
 		// return "invalid mode" if we are switching between video modes in fullscreen mode
