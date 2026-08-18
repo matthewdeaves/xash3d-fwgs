@@ -1511,14 +1511,25 @@ void GL_SetupAttributes( int safegl )
 
 	gEngfuncs.Con_Printf( "bpp %d\n", gpGlobals->desktopBitsPixel );
 
+	// oldmac: -glnostencil drops the stencil request. Nothing we ship reads the
+	// stencil buffer (shadows are off, its only consumer is decals on transparent
+	// surfaces), yet its presence forces a stencil clear every frame and, on the
+	// Rage 128, a packed 32-bit depth+stencil format where the card's native Z is
+	// 16-bit. Set from the launcher's per-machine profile.
 	if( safegl < SAFE_NOSTENCIL )
-		gEngfuncs.GL_SetAttribute( REF_GL_STENCIL_SIZE, gl_stencilbits.value );
+		gEngfuncs.GL_SetAttribute( REF_GL_STENCIL_SIZE,
+			gEngfuncs.Sys_CheckParm( "-glnostencil" ) ? 0 : (int)gl_stencilbits.value );
 
 	if( safegl < SAFE_NOALPHA )
 		gEngfuncs.GL_SetAttribute( REF_GL_ALPHA_SIZE, 8 );
 
+	// oldmac: -gldepth16 asks for a 16-bit depth buffer, which Cocoa honors even
+	// though it ignores the color size request. Half-Life's world scale was built
+	// for 16-bit Z; combined with -glnostencil this is what actually gets the
+	// Rage 128 a native 16-bit Z buffer.
 	if( safegl < SAFE_NODEPTH )
-		gEngfuncs.GL_SetAttribute( REF_GL_DEPTH_SIZE, 24 );
+		gEngfuncs.GL_SetAttribute( REF_GL_DEPTH_SIZE,
+			gEngfuncs.Sys_CheckParm( "-gldepth16" ) ? 16 : 24 );
 	else
 		gEngfuncs.GL_SetAttribute( REF_GL_DEPTH_SIZE, 8 );
 
