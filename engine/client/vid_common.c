@@ -230,7 +230,14 @@ void VID_Init( void )
 	// oldmac: the video menu's 16-bit color toggle. Read where the fullscreen
 	// display mode is chosen (vid_sdl2.c); -bpp 16 / -bpp 32 on the command
 	// line force it either way for bench A/Bs.
-	Cvar_Get( "vid_16bit", VID_Default16Bit( ), FCVAR_ARCHIVE, "prefer a 16-bit display mode in exclusive fullscreen (faster on old GPUs, dithered color)" );
+	//
+	// FCVAR_RENDERINFO, NOT FCVAR_ARCHIVE, and the difference was measured:
+	// config.cfg is exec'd after video init, so an ARCHIVE value cannot reach
+	// the first mode set and a G3 that chose 32-bit came back up 16-bit every
+	// launch. RENDERINFO cvars archive into video.cfg, which R_Init_Video execs
+	// before the mode is picked; it is the class every persistent video mode
+	// cvar (vid_mode, fullscreen) already uses for exactly this reason.
+	Cvar_Get( "vid_16bit", VID_Default16Bit( ), FCVAR_RENDERINFO, "prefer a 16-bit display mode in exclusive fullscreen (faster on old GPUs, dithered color)" );
 
 	Cvar_RegisterVariable( &vid_mode );
 	Cvar_RegisterVariable( &vid_rotate );
