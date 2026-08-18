@@ -69,6 +69,20 @@ static const char *GL_TargetToString( GLenum target )
 	return "??";
 }
 
+// oldmac: -bilinear (the launcher's Rage 128 profile) must win over whatever
+// gl_texture_trilinear value an old opengl.cfg archived, so the parameter is
+// read here, where the filter is chosen, rather than Cvar_Set once at init
+// where the config exec that follows would overwrite it.
+static qboolean GL_TextureTrilinear( void )
+{
+	static int forced_bilinear = -1;
+
+	if( forced_bilinear < 0 )
+		forced_bilinear = gEngfuncs.Sys_CheckParm( "-bilinear" ) ? 1 : 0;
+
+	return !forced_bilinear && gl_texture_trilinear.value != 0.0f;
+}
+
 qboolean GL_TextureFilteringEnabled( const gl_texture_t *tex )
 {
 	if( FBitSet( tex->flags, TF_NEAREST ))
@@ -119,7 +133,7 @@ void GL_ApplyTextureParams( gl_texture_t *tex )
 		// oldmac: bilinear (one mip level) is selectable because trilinear costs
 		// two sampling cycles per fragment on the Rage 128
 		pglTexParameteri( tex->target, GL_TEXTURE_MIN_FILTER, nomipmap ? GL_LINEAR :
-			( gl_texture_trilinear.value ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR_MIPMAP_NEAREST ));
+			( GL_TextureTrilinear( ) ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR_MIPMAP_NEAREST ));
 		pglTexParameteri( tex->target, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	}
 
@@ -245,7 +259,7 @@ static void GL_UpdateTextureParams( int iTexture )
 		// oldmac: mirror GL_ApplyTextureParams, bilinear selectable via
 		// gl_texture_trilinear 0
 		pglTexParameteri( tex->target, GL_TEXTURE_MIN_FILTER, nomipmap ? GL_LINEAR :
-			( gl_texture_trilinear.value ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR_MIPMAP_NEAREST ));
+			( GL_TextureTrilinear( ) ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR_MIPMAP_NEAREST ));
 		pglTexParameteri( tex->target, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	}
 }

@@ -1251,11 +1251,10 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_polyoffset );
 	gEngfuncs.Cvar_RegisterVariable( &gl_polyoffset_bmodels );
 	gEngfuncs.Cvar_RegisterVariable( &gl_texture_trilinear );
-
-	// oldmac: the launcher's per-machine profile forces bilinear where trilinear
-	// costs double fill (the Rage 128 samples two mip levels in two cycles)
-	if( gEngfuncs.Sys_CheckParm( "-bilinear" ))
-		gEngfuncs.Cvar_Set( "gl_texture_trilinear", "0" );
+	// oldmac: -bilinear is honored inside GL_TextureTrilinear (gl_image.c), not
+	// via Cvar_Set here: a set made at init would be overwritten by the
+	// opengl.cfg exec that follows, silently re-enabling trilinear on any
+	// machine that ever archived the default.
 
 	// make sure gl_vsync is checked after vid_restart
 	SetBits( gl_vsync->flags, FCVAR_CHANGED );
