@@ -576,8 +576,19 @@ static rserr_t VID_SetScreenResolution( int width, int height, window_mode_t win
 	}
 	case WINDOW_MODE_FULLSCREEN:
 	{
-		const SDL_DisplayMode want = { .w = width, .h = height };
+		SDL_DisplayMode want = { .w = width, .h = height };
 		SDL_DisplayMode got;
+		int bpp = 0;
+
+		// oldmac: -bpp 16 asks for a 16-bit exclusive fullscreen mode. On macOS
+		// SDL's Cocoa backend ignores the GL color size attributes and derives
+		// the framebuffer color depth from the current display mode, so a mode
+		// switch is the only way to a 16-bit framebuffer there. desktopBitsPixel
+		// then reads 16 as well, which flips texture uploads to the 16-bit
+		// internal formats. If no such mode exists the closest-mode search falls
+		// back silently; the printout below says which depth was actually got.
+		if( Sys_GetIntFromCmdLine( "-bpp", &bpp ) && bpp == 16 )
+			want.format = SDL_PIXELFORMAT_ARGB1555;
 
 		// return "invalid mode" if we are switching between video modes in fullscreen mode
 		// or "invalid fullscreen" if we are switching from windowed to fullscreen
@@ -600,6 +611,8 @@ static rserr_t VID_SetScreenResolution( int width, int height, window_mode_t win
 
 		// SDL_SetWindowDisplayMode is broken in SDL2, it changes the display mode but doesn't change window size
 		SDL_SetWindowSize( host.hWnd, got.w, got.h );
+
+		Con_Printf( "fullscreen mode: %ix%i, %i bpp\n", got.w, got.h, SDL_BITSPERPIXEL( got.format ));
 
 		break;
 	}
