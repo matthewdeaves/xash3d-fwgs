@@ -1511,9 +1511,31 @@ a static lightmap; dynamic-lightmap surfaces still defer to R_BlendLightmaps.
 */
 static qboolean r_singlepass_active = false;
 
+// oldmac: when set, R_SinglePassBrushPoly submits through client vertex arrays
+// (glDrawArrays over the interleaved glpoly2_t verts, GL 1.1 core) instead of
+// per-vertex immediate mode. Immediate mode costs three indirect GL calls plus
+// two wrapper calls per vertex; arrays cost a constant handful of calls per
+// surface. Set up and torn down by R_SinglePassBegin / R_SinglePassEnd.
+static qboolean r_singlepass_arrays_active = false;
+
 // set up the two texture stages for a run of single-pass world surfaces
 static void R_SinglePassBegin( void )
 {
+	// client array state for the arrays submission path. GL_SelectTexture keeps
+	// the client active texture in step with the server one whenever
+	// tmu < glConfig.max_texture_coords, which the guard requires.
+	r_singlepass_arrays_active = gl_singlepass_arrays.value != 0.0f
+		&& glConfig.max_texture_coords >= 2;
+
+	if( r_singlepass_arrays_active )
+	{
+		pglEnableClientState( GL_VERTEX_ARRAY );
+		GL_SelectTexture( XASH_TEXTURE0 );
+		pglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		GL_SelectTexture( XASH_TEXTURE1 );
+		pglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+	}
+
 	// TMU0: base texture replaces the (white) fragment color
 	GL_SelectTexture( XASH_TEXTURE0 );
 	pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE );
@@ -1558,6 +1580,16 @@ static qboolean R_HasTexEnvCombine( void )
 // restore default single-texture state after the single-pass world run
 static void R_SinglePassEnd( void )
 {
+	if( r_singlepass_arrays_active )
+	{
+		GL_SelectTexture( XASH_TEXTURE1 );
+		pglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		GL_SelectTexture( XASH_TEXTURE0 );
+		pglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		pglDisableClientState( GL_VERTEX_ARRAY );
+		r_singlepass_arrays_active = false;
+	}
+
 	GL_SelectTexture( XASH_TEXTURE1 );
 	pglTexEnvi( GL_TEXTURE_ENV, GL_RGB_SCALE_ARB, 1 );
 	pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
@@ -1574,6 +1606,22 @@ static void R_SinglePassBrushPoly( msurface_t *fa )
 	int		i;
 
 	GL_Bind( XASH_TEXTURE1, tr.lightmapTextures[fa->lightmaptexturenum] );
+
+	// glpoly2_t verts are interleaved float[VERTEXSIZE]: xyz, s, t, lm_s, lm_t,
+	// exactly a client vertex array. One glDrawArrays replaces 3 indirect GL
+	// calls plus 2 wrapper calls per vertex.
+	if( r_singlepass_arrays_active )
+	{
+		v = p->verts[0];
+
+		pglVertexPointer( 3, GL_FLOAT, VERTEXSIZE * sizeof( float ), v );
+		GL_SelectTexture( XASH_TEXTURE0 );
+		pglTexCoordPointer( 2, GL_FLOAT, VERTEXSIZE * sizeof( float ), v + 3 );
+		GL_SelectTexture( XASH_TEXTURE1 );
+		pglTexCoordPointer( 2, GL_FLOAT, VERTEXSIZE * sizeof( float ), v + 5 );
+		pglDrawArrays( GL_POLYGON, 0, p->numverts );
+		return;
+	}
 
 	pglBegin( GL_POLYGON );
 	for( i = 0, v = p->verts[0]; i < p->numverts; i++, v += VERTEXSIZE )

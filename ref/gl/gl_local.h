@@ -721,6 +721,7 @@ extern convar_t	gl_stencilbits;
 extern convar_t	gl_overbright;
 extern convar_t	gl_singlepass;	// oldmac: single-pass multitexture world render (rev 1)
 extern convar_t	gl_singlepass_bmodels;	// oldmac: same, extended to brush entities
+extern convar_t	gl_singlepass_arrays;	// oldmac: client vertex arrays for the single-pass draw
 extern convar_t	gl_lightstyle_upload;	// oldmac: keep animated lightstyles on the single-pass path
 extern convar_t	gl_front_to_back;	// oldmac: draw opaque world chains near to far
 extern convar_t	gl_texture_trilinear;	// oldmac: 0 selects bilinear (single mip level) filtering

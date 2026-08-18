@@ -24,6 +24,7 @@ CVAR_DEFINE_AUTO( gl_overbright, "1", FCVAR_GLCONFIG, "overbrights" );
 // oldmac: single-pass multitexture world render (rev 1)
 CVAR_DEFINE_AUTO( gl_singlepass, "1", FCVAR_GLCONFIG, "single-pass multitexture world render (base x lightmap in one pass)" );
 CVAR_DEFINE_AUTO( gl_singlepass_bmodels, "1", FCVAR_GLCONFIG, "extend the single-pass world render to brush entities (doors, platforms, trains)" );
+CVAR_DEFINE_AUTO( gl_singlepass_arrays, "1", FCVAR_GLCONFIG, "submit single-pass surfaces as client vertex arrays instead of immediate mode" );
 CVAR_DEFINE_AUTO( gl_lightstyle_upload, "1", FCVAR_GLCONFIG, "animated lightstyles update the lightmap texture in place instead of redrawing the surface" );
 CVAR_DEFINE_AUTO( gl_front_to_back, "1", FCVAR_GLCONFIG, "draw opaque world surfaces near to far so the depth test rejects hidden fill" );
 CVAR_DEFINE_AUTO( gl_texture_trilinear, "1", FCVAR_GLCONFIG, "trilinear filtering for mipmapped textures (0 is bilinear, cheaper on old GPUs)" );
@@ -1241,6 +1242,7 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_overbright );
 	gEngfuncs.Cvar_RegisterVariable( &gl_singlepass );
 	gEngfuncs.Cvar_RegisterVariable( &gl_singlepass_bmodels );
+	gEngfuncs.Cvar_RegisterVariable( &gl_singlepass_arrays );
 	gEngfuncs.Cvar_RegisterVariable( &gl_lightstyle_upload );
 	gEngfuncs.Cvar_RegisterVariable( &gl_front_to_back );
 	gEngfuncs.Cvar_RegisterVariable( &gl_fog );
