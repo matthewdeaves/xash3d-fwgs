@@ -1413,13 +1413,26 @@ static qboolean R_CheckLightMap( msurface_t *fa )
 		if( g_lightstylevalue[fa->styles[maps]] == fa->cached_light[maps] )
 			continue;
 
-		const int style = fa->styles[maps];
+		// oldmac: the classic engine sent every animated style except 0, 20 and
+		// >= 32 to the dynamic chain here, BEFORE R_UpdateSurfaceCachedLight ran,
+		// so cached_light never caught up, the comparison above kept failing, and
+		// every surface lit by a designer flicker or pulse style was redrawn as a
+		// second geometry pass in R_BlendLightmaps on every frame forever. Upload
+		// the changed lightmap in place instead (the same TexSubImage path the
+		// switchable styles already take) and the surface stays single-pass.
+		if( !gl_lightstyle_upload.value )
+		{
+			const int style = fa->styles[maps];
 
-		// flickering light styles can go to dynamic chain
-		if( !( style >= 32 || style == 0 || style == 20 ))
-			return true;
+			// flickering light styles can go to dynamic chain
+			if( !( style >= 32 || style == 0 || style == 20 ))
+				return true;
+		}
 
-		byte temp[132*132*4];
+		// oldmac: static, not stack: 68 KB reserved and touched per animated
+		// surface per frame is real cache traffic on a G3/G4. Nothing recurses
+		// through here, the renderer is single-threaded.
+		static byte temp[132*132*4];
 		mextrasurf_t *info = fa->info;
 		int sample_size = gEngfuncs.Mod_SampleSizeForFace( fa );
 		int smax = ( info->lightextents[0] / sample_size ) + 1;
