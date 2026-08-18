@@ -24,7 +24,20 @@ CVAR_DEFINE_AUTO( gl_overbright, "1", FCVAR_GLCONFIG, "overbrights" );
 // oldmac: single-pass multitexture world render (rev 1)
 CVAR_DEFINE_AUTO( gl_singlepass, "1", FCVAR_GLCONFIG, "single-pass multitexture world render (base x lightmap in one pass)" );
 CVAR_DEFINE_AUTO( gl_singlepass_bmodels, "1", FCVAR_GLCONFIG, "extend the single-pass world render to brush entities (doors, platforms, trains)" );
-CVAR_DEFINE_AUTO( gl_singlepass_arrays, "1", FCVAR_GLCONFIG, "submit single-pass surfaces as client vertex arrays instead of immediate mode" );
+// oldmac: default 0, MEASURED OUT as a default on 2026-08-18. On Apple's
+// PowerPC GL driver (Leopard R300, dual G5) per-surface client-array draws
+// with changing pointers make the driver rebuild its vertex submit dispatch
+// on every glDrawArrays (gleSetVertexArrayFunc / gldUpdateDispatch in the
+// sample profile): about 2.4x the submission CPU of the plain glBegin path,
+// costing the G5 12% of its frame rate, while no machine measured a gain.
+// The code stays for a CPU-bound-machine experiment (Quicksilver), one cvar
+// away.
+// Deliberately NOT FCVAR_GLCONFIG: fleet machines that ran the arrays default
+// have "1" archived in opengl.cfg, and an archived value would silently
+// override this default forever (the -bilinear lesson). A plain cvar is never
+// archived, the stale line is rejected by the glconfig-only setter and drops
+// out on the next clean exit, and the experiment is opt-in per session.
+CVAR_DEFINE_AUTO( gl_singlepass_arrays, "0", 0, "submit single-pass surfaces as client vertex arrays instead of immediate mode" );
 CVAR_DEFINE_AUTO( gl_lightstyle_upload, "1", FCVAR_GLCONFIG, "animated lightstyles update the lightmap texture in place instead of redrawing the surface" );
 CVAR_DEFINE_AUTO( gl_front_to_back, "1", FCVAR_GLCONFIG, "draw opaque world surfaces near to far so the depth test rejects hidden fill" );
 CVAR_DEFINE_AUTO( gl_texture_trilinear, "1", FCVAR_GLCONFIG, "trilinear filtering for mipmapped textures (0 is bilinear, cheaper on old GPUs)" );
