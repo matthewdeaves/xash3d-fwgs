@@ -67,7 +67,30 @@ void R_SaveVideoMode( int w, int h, int render_w, int render_h, qboolean maximiz
 	Cvar_FullSet( "vid_height", temp, vid_width.flags  );
 
 	Cvar_DirectSet( &vid_maximized, maximized ? "1" : "0" );
-	
+
+	// oldmac: keep the vid_mode STORAGE cvar pointing at the mode actually in
+	// effect. The launcher's -width/-height path sets a mode without going
+	// through vid_setmode, so the stored index went stale and the video menu
+	// highlighted a different resolution than the one on screen; applying any
+	// other setting on that page then re-issued the stale mode. Reported from
+	// the G3, whose profile always launches by explicit size. Only an exact
+	// match updates it; a windowed size between modes leaves it alone.
+	{
+		int i;
+
+		for( i = 0; i < R_MaxVideoModes(); i++ )
+		{
+			vidmode_t *mode = R_GetVideoMode( i );
+
+			if( mode && mode->width == w && mode->height == h )
+			{
+				Q_snprintf( temp, sizeof( temp ), "%d", i );
+				Cvar_DirectSet( &vid_mode, temp );
+				break;
+			}
+		}
+	}
+
 	// immediately drop changed state or we may trigger
 	// video subsystem to reapply settings
 	host.renderinfo_changed = false;
