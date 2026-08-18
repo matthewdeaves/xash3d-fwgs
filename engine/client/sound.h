@@ -26,7 +26,17 @@ extern poolhandle_t sndpool;
 #define SOUND_22k       22050 // 22khz sample rate
 #define SOUND_44k       44100 // 44khz sample rate
 
+// oldmac: PowerPC mixes at 22 kHz. Sound mixing runs on the main thread and the
+// renderer triggers extra mix passes per frame; at 44.1 kHz every 22 kHz asset,
+// which is nearly all of Half-Life, takes the double-precision resample path
+// (two double to uint conversions per output sample, a store/load round trip on
+// the 7450). At 22 kHz those assets hit the integer fast path. GoldSrc shipped
+// at 22 kHz.
+#if defined( __ppc__ )
+#define SOUND_DMA_SPEED SOUND_22k // hardware playback rate
+#else
 #define SOUND_DMA_SPEED SOUND_44k // hardware playback rate
+#endif
 
 #define PAINTBUFFER_SIZE 1024
 
