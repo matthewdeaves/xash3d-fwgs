@@ -50,6 +50,13 @@ static separate_pass_t draw_wateralpha = { 0, -1 };
 static separate_pass_t draw_alpha_surfaces = { 0, -1 };
 static separate_pass_t draw_fullbrights = { 0, -1 };
 static separate_pass_t draw_details = { 0, -1 };
+// oldmac: dirty ranges for the per-frame clears in R_DrawWorld. The draw_*
+// ranges above are reset by their consumers after each pass; these accumulate
+// every entry touched since the last R_DrawWorld clear, so the clear covers
+// entries added by later passes (alpha chains, brush models) and passes that
+// were skipped, without wiping the whole 2x 32 KB arrays every frame.
+static separate_pass_t clear_fullbrights = { 0, -1 };
+static separate_pass_t clear_details = { 0, -1 };
 static msurface_t		*skychain = NULL;
 static gllightmapstate_t	gl_lms;
 
@@ -1354,6 +1361,7 @@ static void R_RenderFullbrightForSurface( msurface_t *fa, texture_t *t )
 	fa->info->lumachain = fullbright_surfaces[t->fb_texturenum];
 	fullbright_surfaces[t->fb_texturenum] = fa->info;
 	R_AddToSeparatePass( &draw_fullbrights, t->fb_texturenum );
+	R_AddToSeparatePass( &clear_fullbrights, t->fb_texturenum );
 }
 
 static void R_RenderDetailsForSurface( msurface_t *fa, texture_t *t )
@@ -1372,6 +1380,7 @@ static void R_RenderDetailsForSurface( msurface_t *fa, texture_t *t )
 			fa->info->detailchain = detail_surfaces[texturenum];
 			detail_surfaces[texturenum] = fa->info;
 			R_AddToSeparatePass( &draw_details, texturenum );
+			R_AddToSeparatePass( &clear_details, texturenum );
 		}
 	}
 	else if( t->dt_texturenum )
@@ -1379,6 +1388,7 @@ static void R_RenderDetailsForSurface( msurface_t *fa, texture_t *t )
 		fa->info->detailchain = detail_surfaces[t->dt_texturenum];
 		detail_surfaces[t->dt_texturenum] = fa->info;
 		R_AddToSeparatePass( &draw_details, t->dt_texturenum );
+		R_AddToSeparatePass( &clear_details, t->dt_texturenum );
 	}
 }
 
@@ -3978,8 +3988,25 @@ void R_DrawWorld( void )
 
 	VectorCopy( RI.cullorigin, tr.modelorg );
 	memset( gl_lms.lightmap_surfaces, 0, sizeof( gl_lms.lightmap_surfaces ));
-	memset( fullbright_surfaces, 0, sizeof( fullbright_surfaces ));
-	memset( detail_surfaces, 0, sizeof( detail_surfaces ));
+
+	// oldmac: fullbright_surfaces and detail_surfaces are MAX_TEXTURES (8192)
+	// pointers each. Clearing both in full wrote 64 KB of zeros per frame,
+	// evicting a quarter of a G4's L2 cache before the frame began, and on most
+	// frames the arrays were already all-zero because the consumers null their
+	// entries as they draw. Clear only the range touched since the last clear.
+	if( R_SeparatePassActive( &clear_fullbrights ))
+	{
+		memset( &fullbright_surfaces[clear_fullbrights.first], 0,
+			( clear_fullbrights.last - clear_fullbrights.first + 1 ) * sizeof( fullbright_surfaces[0] ));
+		R_ResetSeparatePass( &clear_fullbrights );
+	}
+
+	if( R_SeparatePassActive( &clear_details ))
+	{
+		memset( &detail_surfaces[clear_details.first], 0,
+			( clear_details.last - clear_details.first + 1 ) * sizeof( detail_surfaces[0] ));
+		R_ResetSeparatePass( &clear_details );
+	}
 
 	gl_lms.dynamic_surfaces = NULL;
 	pglDisable( GL_ALPHA_TEST );
