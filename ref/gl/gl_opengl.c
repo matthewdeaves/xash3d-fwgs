@@ -25,6 +25,7 @@ CVAR_DEFINE_AUTO( gl_overbright, "1", FCVAR_GLCONFIG, "overbrights" );
 CVAR_DEFINE_AUTO( gl_singlepass, "1", FCVAR_GLCONFIG, "single-pass multitexture world render (base x lightmap in one pass)" );
 CVAR_DEFINE_AUTO( gl_singlepass_bmodels, "1", FCVAR_GLCONFIG, "extend the single-pass world render to brush entities (doors, platforms, trains)" );
 CVAR_DEFINE_AUTO( gl_lightstyle_upload, "1", FCVAR_GLCONFIG, "animated lightstyles update the lightmap texture in place instead of redrawing the surface" );
+CVAR_DEFINE_AUTO( gl_front_to_back, "1", FCVAR_GLCONFIG, "draw opaque world surfaces near to far so the depth test rejects hidden fill" );
 CVAR_DEFINE_AUTO( gl_fog, "1", FCVAR_GLCONFIG, "allow for rendering fog using built-in OpenGL fog implementation" );
 CVAR_DEFINE_AUTO( gl_litwater_force, "0", FCVAR_GLCONFIG, "force enable lightmapped water, even if support not declared in the map" );
 CVAR_DEFINE_AUTO( r_lighting_ambient, "0.3", FCVAR_GLCONFIG, "map ambient lighting scale" );
@@ -1240,6 +1241,7 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_singlepass );
 	gEngfuncs.Cvar_RegisterVariable( &gl_singlepass_bmodels );
 	gEngfuncs.Cvar_RegisterVariable( &gl_lightstyle_upload );
+	gEngfuncs.Cvar_RegisterVariable( &gl_front_to_back );
 	gEngfuncs.Cvar_RegisterVariable( &gl_fog );
 	gEngfuncs.Cvar_RegisterVariable( &gl_litwater_force );
 

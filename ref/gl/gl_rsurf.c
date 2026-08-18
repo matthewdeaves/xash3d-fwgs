@@ -1778,6 +1778,26 @@ static void R_DrawTextureChains( void )
 			continue;	// draw transparent surfaces later
 		}
 
+		// oldmac: R_RecursiveWorldNode pushes each surface on the HEAD of its
+		// texture chain while walking the BSP front to back, so the chain reads
+		// back to front, the worst order for the depth test on a fillrate-bound
+		// GPU. Reverse it so near surfaces fill first and occluded far fragments
+		// die in the depth test instead of costing texture fetch and blend.
+		// Opaque chains only; order within an opaque chain has no visual effect.
+		if( gl_front_to_back.value )
+		{
+			msurface_t *rev = NULL;
+
+			while( s != NULL )
+			{
+				msurface_t *next = s->texturechain;
+				s->texturechain = rev;
+				rev = s;
+				s = next;
+			}
+			s = rev;
+		}
+
 		for( ; s != NULL; s = s->texturechain )
 			R_RenderBrushPoly( s, CULL_VISIBLE );
 		t->texturechain = NULL;
