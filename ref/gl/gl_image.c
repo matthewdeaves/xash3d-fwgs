@@ -116,7 +116,10 @@ void GL_ApplyTextureParams( gl_texture_t *tex )
 	}
 	else
 	{
-		pglTexParameteri( tex->target, GL_TEXTURE_MIN_FILTER, nomipmap ? GL_LINEAR : GL_LINEAR_MIPMAP_LINEAR );
+		// oldmac: bilinear (one mip level) is selectable because trilinear costs
+		// two sampling cycles per fragment on the Rage 128
+		pglTexParameteri( tex->target, GL_TEXTURE_MIN_FILTER, nomipmap ? GL_LINEAR :
+			( gl_texture_trilinear.value ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR_MIPMAP_NEAREST ));
 		pglTexParameteri( tex->target, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	}
 
@@ -239,7 +242,10 @@ static void GL_UpdateTextureParams( int iTexture )
 	}
 	else
 	{
-		pglTexParameteri( tex->target, GL_TEXTURE_MIN_FILTER, nomipmap ? GL_LINEAR : GL_LINEAR_MIPMAP_LINEAR );
+		// oldmac: mirror GL_ApplyTextureParams, bilinear selectable via
+		// gl_texture_trilinear 0
+		pglTexParameteri( tex->target, GL_TEXTURE_MIN_FILTER, nomipmap ? GL_LINEAR :
+			( gl_texture_trilinear.value ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR_MIPMAP_NEAREST ));
 		pglTexParameteri( tex->target, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	}
 }
@@ -271,6 +277,7 @@ void R_SetTextureParameters( void )
 	ClearBits( gl_texture_lodbias.flags, FCVAR_CHANGED );
 	ClearBits( gl_texture_nearest.flags, FCVAR_CHANGED );
 	ClearBits( gl_lightmap_nearest.flags, FCVAR_CHANGED );
+	ClearBits( gl_texture_trilinear.flags, FCVAR_CHANGED );
 
 	// change all the existing mipmapped texture objects
 	for( int i = 0; i < gl_numTextures; i++ )
