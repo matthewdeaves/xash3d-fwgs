@@ -447,6 +447,8 @@ extern convar_t		sv_userinfo_penalty_multiplier;
 extern convar_t		sv_userinfo_penalty_attempts;
 extern convar_t		sv_fullupdate_penalty_time;
 extern convar_t		sv_log_outofband;
+extern convar_t		sv_query_rate_burst;
+extern convar_t		sv_query_rate_period;
 extern convar_t		sv_allow_autoaim;
 extern convar_t		sv_aim;
 extern convar_t		sv_allow_testpacket;
@@ -582,6 +584,7 @@ void SV_RequestMissingResources( void );
 void SV_InitFilter( void );
 qboolean SV_CheckIP( netadr_t *adr );
 qboolean SV_CheckID( const char *id );
+qboolean SV_RateLimitAddress( netadr_t adr, int burst, double period );
 
 //
 // sv_frame.c

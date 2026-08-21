@@ -154,6 +154,8 @@ CVAR_DEFINE_AUTO( sv_fullupdate_penalty_time, "1", FCVAR_ARCHIVE, "allow fullupd
 CVAR_DEFINE_AUTO( sv_log_outofband, "0", FCVAR_ARCHIVE, "log out of band messages, can be useful for server admins and for engine debugging" );
 CVAR_DEFINE_AUTO( sv_allow_testpacket, "1", FCVAR_ARCHIVE, "allow generating and sending a big blob of data to test maximum packet size" );
 CVAR_DEFINE_AUTO( sv_expose_player_list, "1", FCVAR_ARCHIVE, "expose player list through packets that don't require connection" );
+CVAR_DEFINE_AUTO( sv_query_rate_burst, "10", FCVAR_ARCHIVE, "unauthenticated queries allowed per address per sv_query_rate_period (0 disables the limit)" );
+CVAR_DEFINE_AUTO( sv_query_rate_period, "1", FCVAR_ARCHIVE, "seconds each unauthenticated query slot takes to drain" );
 
 //============================================================================
 /*
@@ -989,6 +991,8 @@ void SV_Init( void )
 	Cvar_RegisterVariable( &sv_log_outofband );
 	Cvar_RegisterVariable( &sv_allow_testpacket );
 	Cvar_RegisterVariable( &sv_expose_player_list );
+	Cvar_RegisterVariable( &sv_query_rate_burst );
+	Cvar_RegisterVariable( &sv_query_rate_period );
 
 	// when we in developer-mode automatically turn cheats on
 	if( host_developer.value ) Cvar_SetValue( "sv_cheats", 1.0f );

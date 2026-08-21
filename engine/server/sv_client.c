@@ -3190,6 +3190,39 @@ static void SV_ExecuteClientCommand( sv_client_t *cl, const char *s )
 
 /*
 =================
+SV_ConnectionlessQueryLimited
+
+true means this packet is an unauthenticated query from an address that has
+had its allowance, and the caller should drop it without replying.
+
+Silent by design. A rate limiter that prints a line per dropped packet is
+itself a way to make the server do work, and during an actual flood the log is
+the first thing to fill the disk. sv_log_outofband already logged the packet
+above, for anyone who wants to see them.
+=================
+*/
+static qboolean SV_ConnectionlessQueryLimited( netadr_t from, const char *pcmd, const char *args )
+{
+	qboolean amplifying;
+
+	amplifying =
+		!Q_strcmp( args, A2S_GOLDSRC_INFO ) ||
+		pcmd[0] == A2S_GOLDSRC_PLAYERS ||
+		pcmd[0] == A2S_GOLDSRC_RULES ||
+		!Q_strcmp( pcmd, A2A_NETINFO ) ||
+		!Q_strcmp( pcmd, A2A_INFO ) ||
+		!Q_strcmp( pcmd, C2S_BANDWIDTHTEST ) ||
+		!Q_strcmp( pcmd, A2A_PING ) ||
+		!Q_strcmp( pcmd, A2A_GOLDSRC_PING );
+
+	if( !amplifying )
+		return false;
+
+	return SV_RateLimitAddress( from, (int)sv_query_rate_burst.value, sv_query_rate_period.value );
+}
+
+/*
+=================
 SV_ConnectionlessPacket
 
 A connectionless packet has four leading 0xff
@@ -3239,6 +3272,29 @@ void SV_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 
 		return;
 	}
+
+	// Rate limit the queries that answer an unauthenticated stranger with more
+	// bytes than they sent.
+	//
+	// A UDP source address is whatever the sender writes in it, so an
+	// amplifying query is a way to point this server's replies at a third
+	// party. Measured on this engine, A2S_RULES answers 9 bytes with 912,
+	// which is 101x. The firewall allowlist is the primary defence and it
+	// works; this is here so that one wrong ufw or nft rule is not the only
+	// thing between the machine and being a usable reflector. ADR 0014.
+	//
+	// Only the amplifying, connectionless, no-credential commands are gated.
+	// Deliberately NOT gated: C2S_CONNECT and C2S_GETCHALLENGE, because
+	// throttling those would throttle joining, which is the thing the server
+	// is for; C2S_RCON, which is authenticated and has its own handling;
+	// A2A_ACK, which answers nothing. A2A_PING is included even though its
+	// reply is small, because the reply is still bigger than nothing and
+	// costs an attacker nothing to ask for.
+	//
+	// sv_query_rate_burst 0 disables it. The default 10 per second per address
+	// is far above anything a server browser does, and a LAN game is unchanged.
+	if( SV_ConnectionlessQueryLimited( from, pcmd, args ))
+		return;
 
 	// Must check `args` because A2S_GOLDSRC_INFO contains spaces.
 	// `pcmd` points only to the first word from the query string.

@@ -342,9 +342,182 @@ static void SV_RemoveIPFilter( ipfilter_t *toremove, qboolean removeAll, qboolea
 }
 
 
+/*
+=============================================================================
+
+CONNECTIONLESS RATE LIMIT
+
+A leaky bucket per source address, so an unauthenticated query cannot be used
+to point this server's replies at somebody else.
+
+Why it is needed. The connectionless handlers are ungated: they check no
+password, no `public` and no `sv_lan`, and there was no rate limit anywhere in
+the engine. Measured on this engine, an A2S_RULES query answers 9 bytes with
+912, which is 101x amplification, and the source address of a UDP packet is
+whatever the sender writes in it. So a stranger can send small packets with
+your victim's address on them and have this server deliver the flood. For
+comparison the sister ports in this family measure 32x (Quake III, which does
+carry a leaky bucket), 23x (Quake II, which does not) and 3x (Quake).
+
+A firewall allowlist is the primary defence and works. This exists so that a
+mistake in one ufw or nft rule is the difference between "annoying" and
+"catastrophic", rather than the only thing standing between the machine and
+being a usable reflector. Both, not either.
+
+Ported from ioquake3's sv_main.c, which has carried this for years, with two
+deliberate changes: time is kept as double seconds from host.realtime rather
+than int milliseconds, so nothing wraps on a server left up for a month, and
+addresses are compared with NET_CompareBaseAdr so IPv4 and IPv6 are handled by
+the code that already knows how, rather than by a second memcmp of the union.
+
+=============================================================================
+*/
+#define MAX_RATE_BUCKETS 1024   // distinct addresses tracked at once
+#define MAX_RATE_HASHES  256
+
+typedef struct leakybucket_s
+{
+	netadr_t	adr;
+	double		lasttime;	// host.realtime at the last accounting
+	int		burst;
+	int		hash;
+	struct leakybucket_s *prev, *next;
+} leakybucket_t;
+
+static leakybucket_t	sv_buckets[MAX_RATE_BUCKETS];
+static leakybucket_t	*sv_buckethashes[MAX_RATE_HASHES];
+
+static int SV_HashForAddress( const netadr_t *adr )
+{
+	const uint8_t	*b = (const uint8_t *)adr;
+	int		hash = 0, i;
+
+	// everything but the trailing port, so one host behind many source ports
+	// lands in one bucket. Which is the point: the port costs an attacker
+	// nothing to vary.
+	for( i = 0; i < (int)( sizeof( netadr_t ) - sizeof( uint16_t )); i++ )
+		hash += (int)b[i] * ( i + 119 );
+
+	hash = hash ^ ( hash >> 10 ) ^ ( hash >> 20 );
+
+	return hash & ( MAX_RATE_HASHES - 1 );
+}
+
+static leakybucket_t *SV_BucketForAddress( netadr_t adr, int burst, double period )
+{
+	leakybucket_t	*bucket;
+	int		hash = SV_HashForAddress( &adr );
+	int		i;
+
+	for( bucket = sv_buckethashes[hash]; bucket; bucket = bucket->next )
+	{
+		if( NET_CompareBaseAdr( bucket->adr, adr ))
+			return bucket;
+	}
+
+	for( i = 0; i < MAX_RATE_BUCKETS; i++ )
+	{
+		bucket = &sv_buckets[i];
+
+		// reclaim a bucket that has had time to drain completely. The
+		// interval < 0 case catches host.realtime going backwards, which
+		// happens on a timedemo or a manual clock change and would
+		// otherwise strand the bucket forever.
+		if( bucket->lasttime > 0.0 )
+		{
+			double interval = host.realtime - bucket->lasttime;
+
+			if( interval > ( burst * period ) || interval < 0.0 )
+			{
+				if( bucket->prev != NULL )
+					bucket->prev->next = bucket->next;
+				else sv_buckethashes[bucket->hash] = bucket->next;
+
+				if( bucket->next != NULL )
+					bucket->next->prev = bucket->prev;
+
+				memset( bucket, 0, sizeof( *bucket ));
+			}
+		}
+
+		if( NET_NetadrType( &bucket->adr ) == NA_UNDEFINED && bucket->lasttime == 0.0 )
+		{
+			bucket->adr = adr;
+			bucket->lasttime = host.realtime;
+			bucket->burst = 0;
+			bucket->hash = hash;
+
+			bucket->next = sv_buckethashes[hash];
+			if( sv_buckethashes[hash] != NULL )
+				sv_buckethashes[hash]->prev = bucket;
+			bucket->prev = NULL;
+			sv_buckethashes[hash] = bucket;
+
+			return bucket;
+		}
+	}
+
+	// every bucket is in use and none has drained. That is either a real
+	// flood from many addresses or a deliberate attempt to exhaust the table,
+	// and in both cases the safe answer is to say no.
+	return NULL;
+}
+
+/*
+====================
+SV_RateLimitAddress
+
+true means "over the limit, drop it". A NULL bucket, meaning the table is
+full, also means true: fail closed, never open.
+====================
+*/
+qboolean SV_RateLimitAddress( netadr_t adr, int burst, double period )
+{
+	leakybucket_t	*bucket;
+	double		interval;
+	int		expired;
+
+	if( burst <= 0 || period <= 0.0 )
+		return false; // disabled
+
+	bucket = SV_BucketForAddress( adr, burst, period );
+	if( bucket == NULL )
+		return true;
+
+	interval = host.realtime - bucket->lasttime;
+	if( interval < 0.0 )
+		interval = 0.0;
+
+	expired = (int)( interval / period );
+
+	if( expired > bucket->burst )
+	{
+		bucket->burst = 0;
+		bucket->lasttime = host.realtime;
+	}
+	else
+	{
+		bucket->burst -= expired;
+		bucket->lasttime = host.realtime - ( interval - ( expired * period ));
+	}
+
+	if( bucket->burst < burst )
+	{
+		bucket->burst++;
+		return false;
+	}
+
+	return true;
+}
+
+static void SV_InitRateLimit( void )
+{
+	memset( sv_buckets, 0, sizeof( sv_buckets ));
+	memset( sv_buckethashes, 0, sizeof( sv_buckethashes ));
+}
+
 qboolean SV_CheckIP( netadr_t *adr )
 {
-	// TODO: ip rate limit
 	for( ipfilter_t *entry = ipfilter; entry; entry = entry->next )
 	{
 		if( entry->endTime && host.realtime > entry->endTime )
@@ -554,6 +727,7 @@ void SV_InitFilter( void )
 {
 	SV_InitIPFilter();
 	SV_InitIDFilter();
+	SV_InitRateLimit();
 }
 
 void SV_ShutdownFilter( void )
