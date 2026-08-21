@@ -36,6 +36,14 @@ void SDLash_FreeCursors( void );
 void SDLash_HandleGameControllerEvent( SDL_Event *ev );
 
 //
+// in_sdl2.c
+//
+// oldmac: does this OS actually deliver SDL_TEXTINPUT events? False on macOS
+// before 10.5, where SDL's Cocoa text input produces no text and stalls the
+// menu. Both host_sdl2.c and in_sdl2.c need it. See GitHub #29.
+qboolean SDLash_TextInputDelivers( void );
+
+//
 // sensor_sdl2.c
 //
 void SDLash_InitSensors( void );

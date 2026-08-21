@@ -42,7 +42,11 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 	}
 #endif
 
-	if( SDL_IsTextInputActive( ) && down )
+	// oldmac: host.textmode is the engine's own "a text box wants keys" flag and
+	// is set either way. SDL_IsTextInputActive() is false on macOS before 10.5,
+	// because Platform_EnableTextInput deliberately never starts SDL's Cocoa
+	// text input there, so test both. See GitHub #29.
+	if(( SDL_IsTextInputActive( ) || ( !SDLash_TextInputDelivers( ) && host.textmode )) && down )
 	{
 		// this is how engine understands ctrl+c, ctrl+v and other hotkeys
 		if( cls.key_dest != key_game && FBitSet( SDL_GetModState(), KMOD_CTRL ))
@@ -56,11 +60,33 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 			return;
 		}
 
-		// ignore printable keys, they are coming through SDL_TEXTINPUT
-		if(( keynum >= SDL_SCANCODE_A && keynum <= SDL_SCANCODE_Z )
-			|| ( keynum >= SDL_SCANCODE_1 && keynum <= SDL_SCANCODE_0 )
-			|| ( keynum >= SDL_SCANCODE_KP_1 && keynum <= SDL_SCANCODE_KP_0 ))
-			return;
+		// oldmac: where SDL_TEXTINPUT never arrives, make the character here
+		// from the key itself rather than dropping it. Same shape as the SDL 1.2
+		// backend in ../sdl1/host_sdl1.c, which has no text input at all and has
+		// always done this. keysym.sym is the layout-mapped keycode and is
+		// already ASCII for printable keys, unlike keysym.scancode which is
+		// physical. Falls through afterwards so the key event is still
+		// delivered, exactly as the SDL 1.2 path does. See GitHub #29.
+		if( !SDLash_TextInputDelivers( ))
+		{
+			int ch = key.keysym.sym;
+
+			if( ch > 0 && ch < 128 && isprint( ch ))
+			{
+				if( FBitSet( SDL_GetModState(), KMOD_SHIFT ))
+					ch = Key_ToUpper( ch );
+
+				CL_CharEvent( ch );
+			}
+		}
+		else
+		{
+			// ignore printable keys, they are coming through SDL_TEXTINPUT
+			if(( keynum >= SDL_SCANCODE_A && keynum <= SDL_SCANCODE_Z )
+				|| ( keynum >= SDL_SCANCODE_1 && keynum <= SDL_SCANCODE_0 )
+				|| ( keynum >= SDL_SCANCODE_KP_1 && keynum <= SDL_SCANCODE_KP_0 ))
+				return;
+		}
 	}
 
 #define DECLARE_KEY_RANGE( min, max, repl ) \

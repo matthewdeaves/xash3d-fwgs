@@ -121,8 +121,77 @@ SDLash_EnableTextInput
 
 =============
 */
+/*
+=============
+SDLash_TextInputDelivers
+
+oldmac: does this OS actually deliver SDL_TEXTINPUT events?
+
+This matters because SDLash_KeyEvent in host_sdl2.c DROPS every printable key
+while SDL_IsTextInputActive() is true, on the understanding that those
+characters will arrive as SDL_TEXTINPUT instead. On macOS before 10.5 they never
+arrive: SDL's Cocoa text input builds a field editor and feeds it through
+-interpretKeyEvents:, which pre Leopard routes via the process wide
+NSInputManager and produces no text for our window. The flag still reads true,
+so the character is lost twice over and the box cannot be typed into at all.
+
+The symptom is exactly what a G3 on 10.3.9 shows in the "enter player name"
+dialog, while an iMac G5 on 10.5.8 running the very same PowerPC slice types
+fine. The difference is the OS, not the CPU, so this has to be a runtime check:
+one ppc7400 slice serves a G4 on 10.4, where text is lost, and a G5 on 10.5,
+where it works.
+
+Darwin major version maps to the OS release: 7 is 10.3, 8 is 10.4, 9 is 10.5.
+At or below 8 takes the key-derived path. See GitHub #29.
+=============
+*/
+#if XASH_APPLE
+#include <sys/utsname.h>
+
+qboolean SDLash_TextInputDelivers( void )
+{
+	static int cached = -1;
+
+	if( cached < 0 )
+	{
+		struct utsname u;
+
+		cached = 1; // assume the normal path unless we can prove otherwise
+
+		if( uname( &u ) == 0 )
+		{
+			int major = atoi( u.release );
+
+			if( major > 0 && major <= 8 )
+				cached = 0;
+		}
+	}
+
+	return cached ? true : false;
+}
+#else
+qboolean SDLash_TextInputDelivers( void ) { return true; }
+#endif
+
 void Platform_EnableTextInput( qboolean enable )
 {
+	// oldmac: on macOS before 10.5, do not start SDL's text input at all.
+	//
+	// SDL_StartTextInput builds a Cocoa field editor and adds it as a subview of
+	// the GL content view, then makes it first responder. Pre Leopard that both
+	// fails to produce any text, because -interpretKeyEvents: routes through the
+	// process wide NSInputManager, and drags the menu's frame rate down while it
+	// is up, so the mouse is sampled about once per frame and OK and Cancel
+	// stop responding to clicks. A text dialog you can neither type in nor
+	// dismiss is how a G3 on 10.3.9 behaved.
+	//
+	// Skipping it leaves SDL_IsTextInputActive() false, and the key handler in
+	// host_sdl2.c then makes characters from the key events themselves, the way
+	// the SDL 1.2 backend always has. host.textmode still tracks the engine's
+	// intent, so nothing else changes. See GitHub #29.
+	if( !SDLash_TextInputDelivers( ))
+		return;
+
 	enable ? SDL_StartTextInput() : SDL_StopTextInput();
 }
 
