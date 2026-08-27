@@ -952,14 +952,27 @@ A helper function if platform input doesn't support text mode properly
 */
 int Key_ToUpper( int keynum )
 {
-	if( keynum == '-' )
-		return '_';
-	if( keynum == '=' )
-		return '+';
-	if( keynum == ';' )
-		return ':';
-	if( keynum == '\'' )
-		return '"';
+	if( keynum == '-' ) return '_';
+	if( keynum == '=' ) return '+';
+	if( keynum == ';' ) return ':';
+	if( keynum == '\'' ) return '"';
+	if( keynum == '1' ) return '!';
+	if( keynum == '2' ) return '@';
+	if( keynum == '3' ) return '#';
+	if( keynum == '4' ) return '$';
+	if( keynum == '5' ) return '%';
+	if( keynum == '6' ) return '^';
+	if( keynum == '7' ) return '&';
+	if( keynum == '8' ) return '*';
+	if( keynum == '9' ) return '(';
+	if( keynum == '0' ) return ')';
+	if( keynum == '`' ) return '~';
+	if( keynum == '[' ) return '{';
+	if( keynum == ']' ) return '}';
+	if( keynum == '\\' ) return '|';
+	if( keynum == ',' ) return '<';
+	if( keynum == '.' ) return '>';
+	if( keynum == '/' ) return '?';
 
 	return Q_toupper( keynum );
 }

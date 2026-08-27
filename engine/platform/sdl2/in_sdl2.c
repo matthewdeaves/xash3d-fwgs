@@ -146,28 +146,13 @@ At or below 8 takes the key-derived path. See GitHub #29.
 =============
 */
 #if XASH_APPLE
-#include <sys/utsname.h>
-
 qboolean SDLash_TextInputDelivers( void )
 {
-	static int cached = -1;
-
-	if( cached < 0 )
-	{
-		struct utsname u;
-
-		cached = 1; // assume the normal path unless we can prove otherwise
-
-		if( uname( &u ) == 0 )
-		{
-			int major = atoi( u.release );
-
-			if( major > 0 && major <= 8 )
-				cached = 0;
-		}
-	}
-
-	return cached ? true : false;
+	// oldmac: on macOS (especially PowerPC with panther-sdl2 2.0.3, and vintage
+	// Cocoa), SDL_StartTextInput() attaches a field editor that drops key events
+	// and breaks responder focus. Directly translating keysyms to CL_CharEvent
+	// delivers reliable typing for all text boxes across all OS versions.
+	return false;
 }
 #else
 qboolean SDLash_TextInputDelivers( void ) { return true; }
