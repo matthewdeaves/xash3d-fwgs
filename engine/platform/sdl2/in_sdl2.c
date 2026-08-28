@@ -146,13 +146,28 @@ At or below 8 takes the key-derived path. See GitHub #29.
 =============
 */
 #if XASH_APPLE
+#include <sys/utsname.h>
+
 qboolean SDLash_TextInputDelivers( void )
 {
-	// oldmac: on macOS (especially PowerPC with panther-sdl2 2.0.3, and vintage
-	// Cocoa), SDL_StartTextInput() attaches a field editor that drops key events
-	// and breaks responder focus. Directly translating keysyms to CL_CharEvent
-	// delivers reliable typing for all text boxes across all OS versions.
-	return false;
+	static int cached = -1;
+
+	if( cached < 0 )
+	{
+		struct utsname u;
+
+		cached = 1; // assume the normal path unless we can prove otherwise
+
+		if( uname( &u ) == 0 )
+		{
+			int major = atoi( u.release );
+
+			if( major > 0 && major <= 8 )
+				cached = 0;
+		}
+	}
+
+	return cached ? true : false;
 }
 #else
 qboolean SDLash_TextInputDelivers( void ) { return true; }
@@ -174,6 +189,14 @@ void Platform_EnableTextInput( qboolean enable )
 	// host_sdl2.c then makes characters from the key events themselves, the way
 	// the SDL 1.2 backend always has. host.textmode still tracks the engine's
 	// intent, so nothing else changes. See GitHub #29.
+	//
+	// oldmac 2026-08-28: a same-day commit (d926fef2) widened this to skip SDL
+	// text input on EVERY macOS version, not just pre-10.5, on the unverified
+	// claim that the Cocoa field editor breaks responder focus fleet-wide. That
+	// contradicts the specific, dated finding above ("an iMac G5 on 10.5.8 ...
+	// types fine") and was never confirmed on hardware before landing. Restored
+	// the version gate rather than carry an unmeasured widening into a release.
+	// See issue #18 and .claude/skills/claim-hygiene.
 	if( !SDLash_TextInputDelivers( ))
 		return;
 
