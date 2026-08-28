@@ -65,8 +65,25 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 		// backend in ../sdl1/host_sdl1.c, which has no text input at all and has
 		// always done this. keysym.sym is the layout-mapped keycode and is
 		// already ASCII for printable keys, unlike keysym.scancode which is
-		// physical. Falls through afterwards so the key event is still
-		// delivered, exactly as the SDL 1.2 path does. See GitHub #29.
+		// physical. See GitHub #29.
+		//
+		// oldmac 2026-08-28: this used to fall through unconditionally after
+		// delivering the character, "exactly as the SDL 1.2 path does" - which
+		// turned out to mean the SAME keystroke then continued on to the normal
+		// Key_Event() dispatch below and matched any OTHER menu item's hotkey
+		// (g_hotkeys[] in mainui's PicButton.cpp), so typing a name into a text
+		// field could jump the whole menu to Game Options ('g'), Audio ('a'),
+		// Controls ('c') or whatever else the typed letters happened to match.
+		// Measured live on g5-desktop typing a player name: 'g' in "G527GHZ"
+		// left the Customize screen for Game Options mid-keystroke. Intel never
+		// hits this: the SDL_TEXTINPUT branch below already `return`s for a
+		// printable scancode once text input is active, so the character-only
+		// SDL_TEXTINPUT event is the only thing that reaches the field, and the
+		// physical keydown never reaches Key_Event() at all. Returning here too,
+		// but only once a character was actually delivered - Backspace, the
+		// arrows, Enter and friends are not `isprint()` and still need to reach
+		// Key_Event() below, since CMenuField::KeyDown (not Char) is what
+		// handles those. Issue #18.
 		if( !SDLash_TextInputDelivers( ))
 		{
 			int ch = key.keysym.sym;
@@ -77,6 +94,7 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 					ch = Key_ToUpper( ch );
 
 				CL_CharEvent( ch );
+				return;
 			}
 		}
 		else
