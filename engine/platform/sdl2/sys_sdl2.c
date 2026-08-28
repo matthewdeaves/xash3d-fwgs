@@ -17,6 +17,11 @@ GNU General Public License for more details.
 #include "platform.h"
 #include "platform_sdl2.h"
 
+#if XASH_APPLE
+#include <sys/utsname.h>   // SDLash_PreflightPermissions gates on the Darwin major
+#include <stdlib.h>        // atoi
+#endif
+
 #if XASH_TIMER == TIMER_SDL
 double Platform_DoubleTime( void )
 {
@@ -85,6 +90,76 @@ static void SDLCALL SDLash_LogOutputFunction( void *userdata, int category, SDL_
 
 	Con_Reportf( "%s" S_BLUE "SDL" S_DEFAULT ": [%s] %s\n", str, SDLash_CategoryToString( category ), message );
 }
+
+#if XASH_APPLE
+/*
+=============
+SDLash_PreflightPermissions
+
+oldmac: ask macOS for the microphone HERE, at launch, while this process still
+has no window.
+
+The engine does not open the microphone at startup: cl_main.c calls Voice_Init
+with preinit = true, which registers the codec and touches no device. The device
+is opened later, from cl_parse.c, when the SERVER announces its voice codec, and
+that runs on to VoiceCapture_Init -> SDL_OpenAudioDevice( NULL, SDL_TRUE, ... ).
+
+So on macOS 10.14 and later the permission prompt lands at connect time, with
+the game fullscreen and the mouse grabbed, and the player cannot answer it.
+Reported on imac-2019 (15.7.9) twice on 2026-08-28: the prompt appeared and
+could not be clicked, which blocks joining a server. NSMicrophoneUsageDescription
+is present and correct in the Info.plist, so macOS prompts rather than killing
+the process; the key was never the problem, the timing was.
+
+Opening and immediately closing a capture device here triggers the same prompt
+from a windowless process during startup, where it is reachable. Whatever the
+player answers is remembered by the system, so the connect-time open later finds
+the decision already made and never prompts again. Deliberately ignores the
+result: this is not a capability check, and a machine with no microphone at all
+must still start normally.
+
+Uses SDL rather than AVCaptureDevice on purpose. The authorization API is 10.14+
+and is not in the 10.7 SDK this fork builds the Intel slice against, so it could
+not be called from that slice without runtime symbol lookup. SDL is already
+linked and its coreaudio backend triggers the same TCC check.
+
+Gated at RUNTIME on Darwin major >= 18 (macOS 10.14), not at compile time: one
+x86_64 binary serves 10.6.8 through macOS 26, so the same code ships to machines
+that have TCC and machines that have never heard of it. Below 18 this does
+nothing at all, which keeps every PowerPC machine and both Lion minis on exactly
+the path they had before. Issue #25.
+=============
+*/
+static void SDLash_PreflightPermissions( void )
+{
+	struct utsname u;
+	SDL_AudioSpec wanted, got;
+	SDL_AudioDeviceID dev;
+
+	if( Host_IsDedicated( ))
+		return; // a dedicated server never captures audio
+
+	if( uname( &u ) != 0 || atoi( u.release ) < 18 )
+		return; // pre-10.14: no TCC, nothing to ask for
+
+	if( SDL_InitSubSystem( SDL_INIT_AUDIO ) != 0 )
+		return;
+
+	SDL_zero( wanted );
+	wanted.freq = 44100;
+	wanted.format = AUDIO_S16SYS;
+	wanted.channels = 1;
+	wanted.samples = 1024;
+
+	dev = SDL_OpenAudioDevice( NULL, SDL_TRUE, &wanted, &got, 0 );
+
+	if( dev != 0 )
+		SDL_CloseAudioDevice( dev );
+
+	// Leave SDL_INIT_AUDIO up: Sound_Init wants it shortly anyway, and quitting
+	// the subsystem here would tear down state it is about to build.
+}
+#endif // XASH_APPLE
 
 void SDLash_Init( void )
 {
@@ -171,6 +246,10 @@ void SDLash_Init( void )
 
 	SDLash_InitCursors();
 	SDLash_InitSensors();
+
+#if XASH_APPLE
+	SDLash_PreflightPermissions();
+#endif
 }
 
 void SDLash_Shutdown( void )
