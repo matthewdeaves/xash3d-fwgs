@@ -282,7 +282,43 @@ qboolean VoiceCapture_Init( void )
 	wanted.samples = voice.frame_size;
 	wanted.callback = SDL_SoundInputCallback;
 
+#if XASH_APPLE
+	// oldmac: let go of the mouse before opening the capture device.
+	//
+	// This is where macOS decides to ask for microphone permission, and on
+	// 10.14+ it is asked the first time a player joins a server that uses voice
+	// chat. At that moment the game is fullscreen with the pointer grabbed and
+	// confined to the window, so the prompt cannot be reached: reported twice on
+	// imac-2019, "i cant click yes so it kind of blocks me joining a game".
+	//
+	// SDL_OpenAudioDevice does not return until the prompt is answered, which is
+	// what makes an unreachable prompt fatal rather than merely awkward, and is
+	// also why the earlier attempt to ask at startup (1f02cabe, reverted in
+	// 6870a506) hung the game before the window even appeared.
+	//
+	// Ungrabbing and showing the cursor here costs nothing on a machine that has
+	// already answered, because the prompt only ever appears once, and nothing
+	// on any OS that has no TCC at all. The engine re-grabs on the next
+	// IN_ActivateMouse, which happens as soon as the player is back in the game.
+	// Issue #25.
+	{
+		qboolean was_relative = SDL_GetRelativeMouseMode() == SDL_TRUE;
+
+		SDL_SetRelativeMouseMode( SDL_FALSE );
+		Platform_SetMouseGrab( false );
+		SDL_ShowCursor( SDL_ENABLE );
+
+		in_dev = SDL_OpenAudioDevice( NULL, SDL_TRUE, &wanted, &spec, 0 );
+
+		// Put back only what we changed. Leaving the cursor shown is harmless
+		// and the engine hides it again on the next mouse activate; forcing
+		// relative mode back on when it was off would not be.
+		if( was_relative )
+			SDL_SetRelativeMouseMode( SDL_TRUE );
+	}
+#else
 	in_dev = SDL_OpenAudioDevice( NULL, SDL_TRUE, &wanted, &spec, 0 );
+#endif
 
 	if( SDLash_IsAudioError( in_dev ))
 	{
