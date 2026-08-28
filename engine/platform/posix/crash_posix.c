@@ -36,8 +36,35 @@ static char enginelog_path[MAX_OSPATH];
 static qboolean have_libbacktrace = false;
 static char crash_message[8192];
 
+#if XASH_APPLE
+// oldmac: last-resort exit if Platform_MessageBox's Cocoa call deadlocks
+// (documented above, at the call site). SIGALRM firing means the 5s timeout
+// elapsed with the dialog call never returning; _exit is async-signal-safe
+// and unconditional, so this always gets the process (and the machine) back
+// even in the worst case. See issue #18.
+static void Sys_CrashDialogWatchdog( int sig )
+{
+	_exit( 128 );
+}
+
+// oldmac: a second crash on another thread while the first is still trying
+// to show its dialog hits the exact same deadlock trying to show ITS OWN -
+// measured live, two threads stuck in the identical call chain at once. Only
+// the first crash gets to attempt the (watchdog-guarded) dialog; anything
+// after that exits immediately rather than piling up more stuck threads.
+// sig_atomic_t + a simple flag, not a real lock: this runs from a signal
+// handler, where a mutex is itself unsafe to take.
+static volatile sig_atomic_t crash_in_progress = 0;
+#endif
+
 static void Sys_Crash( int signal, siginfo_t *si, void *context )
 {
+#if XASH_APPLE
+	if( crash_in_progress )
+		_exit( 128 + signal );
+	crash_in_progress = 1;
+#endif
+
 	// safe actions first, stack and memory may be corrupted
 	int len = Q_snprintf( crash_message, sizeof( crash_message ), "Ver: " XASH_ENGINE_NAME " " XASH_VERSION " (build %i-%s-%s, %s-%s)\n",
 		Q_buildnum(), g_buildcommit, g_buildbranch, Q_buildos(), Q_buildarch() );
@@ -121,8 +148,37 @@ static void Sys_Crash( int signal, siginfo_t *si, void *context )
 	//
 	// It stays on by default: for somebody actually playing the game, a dialog
 	// saying what happened is much better than the window vanishing.
+	//
+	// oldmac 2026-08-28: Platform_MessageBox is NOT async-signal-safe on Apple -
+	// SDL's Cocoa message box allocates memory (NSAutoreleasePool, etc), and
+	// malloc is documented as unsafe to call from a signal handler: if the
+	// thread that crashed was itself inside malloc when the fault hit, this
+	// call deadlocks on the SAME lock, on the SAME thread, forever - no dialog,
+	// no log line, nothing recoverable short of a hard kill. Measured live on
+	// g5-desktop (10.5.8): a real crash inside libmenu.dylib produced exactly
+	// this - a system-wide beachball that `killall -TERM` could not touch, and
+	// a second, concurrent crash on another thread hit the identical deadlock
+	// trying to show ITS OWN dialog at the same time (sample(1): two threads
+	// both spinning in szone_malloc/__spin_lock under
+	// SDL_ShowSimpleMessageBox -> Cocoa_RegisterApp -> TransformProcessType).
+	// The crash text is already safely on disk (write() above is signal-safe)
+	// by the time we get here, so nothing is lost by risking this. A watchdog
+	// alarm guarantees the process exits either way: normally the dialog shows
+	// and Sys_Quit runs well inside the timeout; if the deadlock happens, the
+	// alarm fires and force-exits instead of hanging the whole session. See
+	// issue #18.
+#if XASH_APPLE
+	// sigaction, not signal(): Sys_Crash's own `signal` PARAMETER shadows the
+	// libc signal() function name in this scope.
+	struct sigaction alarm_act = { .sa_handler = Sys_CrashDialogWatchdog };
+	sigaction( SIGALRM, &alarm_act, NULL );
+	alarm( 5 );
+#endif
 	if( !Sys_CheckParm( "-nomsgbox" ))
 		Platform_MessageBox( "Xash Error", crash_message, false );
+#if XASH_APPLE
+	alarm( 0 );
+#endif
 
 	// log saved, now we can try to save configs and close log correctly, it may crash
 	if( host.type == HOST_NORMAL )
