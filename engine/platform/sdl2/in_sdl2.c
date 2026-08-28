@@ -129,74 +129,54 @@ oldmac: does this OS actually deliver SDL_TEXTINPUT events?
 
 This matters because SDLash_KeyEvent in host_sdl2.c DROPS every printable key
 while SDL_IsTextInputActive() is true, on the understanding that those
-characters will arrive as SDL_TEXTINPUT instead. On macOS before 10.5 they never
-arrive: SDL's Cocoa text input builds a field editor and feeds it through
--interpretKeyEvents:, which pre Leopard routes via the process wide
-NSInputManager and produces no text for our window. The flag still reads true,
-so the character is lost twice over and the box cannot be typed into at all.
+characters will arrive as SDL_TEXTINPUT instead. SDL's Cocoa text input builds
+a field editor and adds it as a subview of the GL content view, then makes it
+first responder, and routes keys through -interpretKeyEvents: and the process
+wide NSInputManager.
 
-The symptom is exactly what a G3 on 10.3.9 shows in the "enter player name"
-dialog, while an iMac G5 on 10.5.8 running the very same PowerPC slice types
-fine. The difference is the OS, not the CPU, so this has to be a runtime check:
-one ppc7400 slice serves a G4 on 10.4, where text is lost, and a G5 on 10.5,
-where it works.
+This was believed to be an OS-version question (Darwin major <= 8, i.e.
+10.3/10.4 only) on the strength of one dated finding: "a G3 on 10.3.9 loses
+every character; an iMac G5 on 10.5.8 running the same ppc7400 slice types
+fine." That finding was never rechecked against a SECOND G5. Measured
+2026-08-28, hands-on on the DUAL PowerMac G5 (`g5-desktop`, 10.5.8, Radeon
+9600, this fork's v1.9.8): opening the player-name text box with the
+OS-version-gated build (this build STILL used SDL_StartTextInput on Leopard)
+produced a SYSTEM-WIDE beachball, not just an unresponsive dialog - worse than
+the G3 symptom, and `killall -TERM` did not recover it, only `-KILL` did. So
+the iMac G5 finding does not generalise even to every other G5, and "OS
+version" was the wrong axis: it happened to correlate with the two machines
+that were actually tested (a pre-Leopard G3/G4 and one Leopard iMac G5), not
+with the real cause.
 
-Darwin major version maps to the OS release: 7 is 10.3, 8 is 10.4, 9 is 10.5.
-At or below 8 takes the key-derived path. See GitHub #29.
+Gated on CPU architecture instead, matching how the rest of this fork
+distinguishes PowerPC (`vid_common.c`, `gl_opengl.c`): every PowerPC slice
+takes the key-derived path, on every OS version, because the flaky part is
+SDL's Cocoa field editor integration on PowerPC's older AppKit, not a specific
+OS release. Intel and arm64 are untouched - no failure has ever been measured
+there, and disabling SDL's real text input there would cost IME/international
+keyboard support for nothing.
 =============
 */
 #if XASH_APPLE
-#include <sys/utsname.h>
-
-qboolean SDLash_TextInputDelivers( void )
-{
-	static int cached = -1;
-
-	if( cached < 0 )
-	{
-		struct utsname u;
-
-		cached = 1; // assume the normal path unless we can prove otherwise
-
-		if( uname( &u ) == 0 )
-		{
-			int major = atoi( u.release );
-
-			if( major > 0 && major <= 8 )
-				cached = 0;
-		}
-	}
-
-	return cached ? true : false;
-}
+#if defined( __ppc__ ) || defined( __ppc64__ )
+qboolean SDLash_TextInputDelivers( void ) { return false; }
+#else
+qboolean SDLash_TextInputDelivers( void ) { return true; }
+#endif
 #else
 qboolean SDLash_TextInputDelivers( void ) { return true; }
 #endif
 
 void Platform_EnableTextInput( qboolean enable )
 {
-	// oldmac: on macOS before 10.5, do not start SDL's text input at all.
-	//
-	// SDL_StartTextInput builds a Cocoa field editor and adds it as a subview of
-	// the GL content view, then makes it first responder. Pre Leopard that both
-	// fails to produce any text, because -interpretKeyEvents: routes through the
-	// process wide NSInputManager, and drags the menu's frame rate down while it
-	// is up, so the mouse is sampled about once per frame and OK and Cancel
-	// stop responding to clicks. A text dialog you can neither type in nor
-	// dismiss is how a G3 on 10.3.9 behaved.
+	// oldmac: on PowerPC, do not start SDL's text input at all - see the doc
+	// comment on SDLash_TextInputDelivers above for what changed 2026-08-28 and
+	// why, and GitHub #29 for the original G3/G4 finding.
 	//
 	// Skipping it leaves SDL_IsTextInputActive() false, and the key handler in
 	// host_sdl2.c then makes characters from the key events themselves, the way
 	// the SDL 1.2 backend always has. host.textmode still tracks the engine's
-	// intent, so nothing else changes. See GitHub #29.
-	//
-	// oldmac 2026-08-28: a same-day commit (d926fef2) widened this to skip SDL
-	// text input on EVERY macOS version, not just pre-10.5, on the unverified
-	// claim that the Cocoa field editor breaks responder focus fleet-wide. That
-	// contradicts the specific, dated finding above ("an iMac G5 on 10.5.8 ...
-	// types fine") and was never confirmed on hardware before landing. Restored
-	// the version gate rather than carry an unmeasured widening into a release.
-	// See issue #18 and .claude/skills/claim-hygiene.
+	// intent, so nothing else changes.
 	if( !SDLash_TextInputDelivers( ))
 		return;
 
