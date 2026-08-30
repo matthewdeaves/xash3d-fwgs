@@ -304,11 +304,24 @@ qboolean VoiceCapture_Init( void )
 	{
 		qboolean was_relative = SDL_GetRelativeMouseMode() == SDL_TRUE;
 
+		// oldmac diagnostic, issue #25: not a fix, just visibility into what
+		// state the window/mouse are actually in at the moment this runs, so a
+		// live test tells us which layer is blocking instead of a screenshot.
+		// Remove before this lands anywhere real.
+		Con_Printf( "^3[voice-diag]^7 before: relative=%i grab=%i shown=%i focus=%p\n",
+			was_relative, Platform_GetMouseGrab(), SDL_ShowCursor( SDL_QUERY ), (void *)SDL_GetKeyboardFocus() );
+
 		SDL_SetRelativeMouseMode( SDL_FALSE );
 		Platform_SetMouseGrab( false );
 		SDL_ShowCursor( SDL_ENABLE );
 
+		Con_Printf( "^3[voice-diag]^7 after-release: relative=%i grab=%i shown=%i focus=%p\n",
+			SDL_GetRelativeMouseMode(), Platform_GetMouseGrab(), SDL_ShowCursor( SDL_QUERY ), (void *)SDL_GetKeyboardFocus() );
+
 		in_dev = SDL_OpenAudioDevice( NULL, SDL_TRUE, &wanted, &spec, 0 );
+
+		Con_Printf( "^3[voice-diag]^7 after-open: relative=%i grab=%i shown=%i focus=%p dev=%u\n",
+			SDL_GetRelativeMouseMode(), Platform_GetMouseGrab(), SDL_ShowCursor( SDL_QUERY ), (void *)SDL_GetKeyboardFocus(), in_dev );
 
 		// Put back only what we changed. Leaving the cursor shown is harmless
 		// and the engine hides it again on the next mouse activate; forcing
