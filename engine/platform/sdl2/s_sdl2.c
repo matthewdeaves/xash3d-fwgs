@@ -17,6 +17,7 @@ GNU General Public License for more details.
 #include "platform.h"
 #include "sound.h"
 #include "voice.h"
+#include "input.h"
 
 #include <SDL.h>
 #include <stdlib.h>
@@ -296,26 +297,48 @@ qboolean VoiceCapture_Init( void )
 	// also why the earlier attempt to ask at startup (1f02cabe, reverted in
 	// 6870a506) hung the game before the window even appeared.
 	//
-	// Ungrabbing and showing the cursor here costs nothing on a machine that has
-	// already answered, because the prompt only ever appears once, and nothing
-	// on any OS that has no TCC at all. The engine re-grabs on the next
-	// IN_ActivateMouse, which happens as soon as the player is back in the game.
-	// Issue #25.
-	{
-		qboolean was_relative = SDL_GetRelativeMouseMode() == SDL_TRUE;
+	// Route through the engine's OWN IN_SetRelativeMouseMode/IN_SetMouseGrab,
+	// not the raw SDL calls this used before: those wrappers keep static state
+	// flags (s_bRawInput/s_bMouseGrab in input.c) that IN_CheckMouseState relies
+	// on to decide whether a later call is a real transition or a no-op. Calling
+	// the raw SDL API here left those flags out of sync with reality - a later
+	// legitimate IN_SetRelativeMouseMode(true) from IN_CheckMouseState would see
+	// its own flag already claiming "true" and skip the real SDL call, silently
+	// leaving mouse-look broken for the rest of the session. Going through the
+	// wrappers also means nothing needs to be manually restored afterward:
+	// IN_CheckMouseState runs every frame off cls.state and host.mouse_visible,
+	// and puts grab/relative mode back correctly on its own as soon as this
+	// call returns - the previous version's manual "was_relative" restore was
+	// solving a problem the wrappers already solve for free.
+	//
+	// Costs nothing on a machine that has already answered the prompt (it only
+	// appears once) and nothing on any OS with no TCC at all.
+	//
+	// NOTE, not yet resolved: svc_voiceinit (the server message that reaches
+	// this function) arrives during the connect handshake, before cls.state
+	// reaches ca_active - and IN_CheckMouseState only ever engages relative
+	// mode or grab when cls.state == ca_active. So in the reported failure
+	// case (joining a fresh voice-enabled server), grab and relative mode are
+	// almost certainly ALREADY off by the time this runs, via the ordinary
+	// frame loop, before either the old or the new version of this block does
+	// anything - which would explain why the previous attempt at this exact
+	// fix made no observed difference on real hardware (issue #25). That
+	// points at something OTHER than SDL mouse grab/relative-mode/cursor
+	// state: most likely which window macOS considers "key" at that moment,
+	// which none of these calls touch. Not measured, not fixed here - the
+	// diagnostic logging below is aimed at confirming or ruling this out on
+	// the next hardware test.
+	Con_Printf( "voice: before capture open: keyboard focus=%p relative=%i\n",
+	            (void *)SDL_GetKeyboardFocus(), (int)SDL_GetRelativeMouseMode() );
 
-		SDL_SetRelativeMouseMode( SDL_FALSE );
-		Platform_SetMouseGrab( false );
-		SDL_ShowCursor( SDL_ENABLE );
+	IN_SetRelativeMouseMode( false );
+	IN_SetMouseGrab( false );
+	SDL_ShowCursor( SDL_ENABLE );
 
-		in_dev = SDL_OpenAudioDevice( NULL, SDL_TRUE, &wanted, &spec, 0 );
+	in_dev = SDL_OpenAudioDevice( NULL, SDL_TRUE, &wanted, &spec, 0 );
 
-		// Put back only what we changed. Leaving the cursor shown is harmless
-		// and the engine hides it again on the next mouse activate; forcing
-		// relative mode back on when it was off would not be.
-		if( was_relative )
-			SDL_SetRelativeMouseMode( SDL_TRUE );
-	}
+	Con_Printf( "voice: after capture open: keyboard focus=%p relative=%i\n",
+	            (void *)SDL_GetKeyboardFocus(), (int)SDL_GetRelativeMouseMode() );
 #else
 	in_dev = SDL_OpenAudioDevice( NULL, SDL_TRUE, &wanted, &spec, 0 );
 #endif
